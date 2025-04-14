@@ -40,32 +40,25 @@ app.post("/webhook", (req, res) => {
 
   const isFirstTime = !last;
 
-  // ✅ 預設地址優先處理
-  if (isFirstTime || defaultId !== last.defaultId) {
-    if (!hadDefault && hasDefault) {
-      action = "加入預設地址";
-    } else if (hadDefault && !hasDefault) {
-      action = "刪除預設地址";
-    } else {
-      action = "變更預設地址";
-    }
-
-    const body = buildEmailBody(customer, action);
-    sendNotification(customer, action, body, res);
-    customerStore[id] = { addressCount, hash, updatedAt, defaultId };
-    return;
-  }
-
   if (!isFirstTime && updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
 
-  // 其餘邏輯處理地址內容變化
-  if (isFirstTime || addressCount > last.addressCount) {
+  // ✅ 判斷變更預設地址（ID 有變）
+  if (!isFirstTime && defaultId !== last.defaultId) {
+    action = "變更預設地址";
+  }
+  // ✅ 判斷新增地址（第一次或數量增加）
+  else if (isFirstTime || addressCount > last.addressCount) {
     action = "新增地址";
-  } else if (addressCount < last.addressCount) {
+  }
+  // ✅ 判斷刪除地址
+  else if (addressCount < last.addressCount) {
     action = "刪除地址";
-  } else if (hash !== last.hash) {
+  }
+  // ✅ 判斷地址內容有變
+  else if (hash !== last.hash) {
     action = "更新地址";
-  } else {
+  }
+  else {
     return res.send("✅ 無地址變更");
   }
 
