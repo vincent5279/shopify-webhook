@@ -1,5 +1,4 @@
-// 📦 Shopify 客戶地址通知系統（繁體中文 + 精準邏輯）
-// 功能：每次變更預設地址或額外地址時準確發送對應通知（新增/變更/刪除）＋帳戶刪除通知
+// 📦 Shopify 客戶地址與帳戶通知系統（繁體中文 + 精準邏輯 + 註冊 + 刪除通知）
 
 const express = require("express");
 const crypto = require("crypto");
@@ -8,20 +7,6 @@ const nodemailer = require("nodemailer");
 
 const app = express();
 app.use(express.json());
-
-// ✅ 最頂部引入 express 之後加入 CORS 中介層
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*"); // 你可以改成 Shopify 網址更安全
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-
-  // ✅ 特別處理預檢請求（fetch 預先發 OPTIONS）
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
-  next();
-});
 
 const customerStore = {}; // { [customerId]: { defaultHash, extraHash } }
 
@@ -42,7 +27,7 @@ function hashAddresses(addresses) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-function buildEmailBody(customer, action) {
+function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
   body += `──────────────────\n`;
@@ -70,28 +55,19 @@ function buildEmailBody(customer, action) {
   return body;
 }
 
-function sendNotification(customer, action, res) {
-  const body = buildEmailBody(customer, action);
-  transporter.sendMail({
-    from: `"德成電業客服中心" <${process.env.EMAIL_USER}>`,
-    to: process.env.EMAIL_USER,
-    subject: `📢 客戶地址${action}`,
-    text: body
-  }).then(() => {
-    console.log(`📨 成功寄出：${action}`);
-    res.send(`📨 已寄出通知：${action}`);
-  }).catch(err => {
-    console.error("❌ 寄信錯誤：", err);
-    res.status(500).send("❌ 郵件發送失敗");
+function sendNotification(to, subject, text) {
+  return transporter.sendMail({
+    from: process.env.EMAIL_USER,
+    to,
+    subject,
+    text
   });
 }
 
-// 📩 Shopify 地址 Webhook
-app.post("/webhook", (req, res) => {
+// 🧾 地址變動 Webhook
+app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const id = customer.id.toString();
-
-  console.log(`📥 Webhook 收到來自客戶 #${id}`);
 
   const addresses = customer.addresses || [];
   const defaultAddress = customer.default_address || null;
@@ -101,87 +77,67 @@ app.post("/webhook", (req, res) => {
   const extraHash = hashAddresses(extraAddresses);
 
   const last = customerStore[id] || { defaultHash: "", extraHash: "" };
-
   const isFirstTime = !customerStore[id];
   const defaultChanged = last.defaultHash !== defaultHash;
   const extraChanged = last.extraHash !== extraHash;
 
-  if (isFirstTime && !defaultChanged && !extraChanged) {
-    console.log("✅ 第一次 webhook，無地址變更");
-    return res.send("✅ 第一次無地址變更，略過");
-  }
-
   let action = null;
+  if (isFirstTime && !defaultChanged && !extraChanged) return res.send("✅ 第一次略過");
 
-  if (!isFirstTime && !last.defaultHash && defaultHash) {
-    action = "加入預設地址";
-  } else if (!isFirstTime && last.defaultHash && !defaultHash) {
-    action = "刪除預設地址";
-  } else if (defaultChanged) {
-    action = "變更預設地址";
-  } else if (!last.extraHash && extraHash) {
-    action = "新增地址";
-  } else if (last.extraHash && !extraHash) {
-    action = "刪除地址";
-  } else if (extraChanged) {
-    action = "更新地址";
-  } else {
-    console.log("✅ 無地址變更");
-    return res.send("✅ 無地址變更");
-  }
+  if (!isFirstTime && !last.defaultHash && defaultHash) action = "加入預設地址";
+  else if (!isFirstTime && last.defaultHash && !defaultHash) action = "刪除預設地址";
+  else if (defaultChanged) action = "變更預設地址";
+  else if (!last.extraHash && extraHash) action = "新增地址";
+  else if (last.extraHash && !extraHash) action = "刪除地址";
+  else if (extraChanged) action = "更新地址";
+  else return res.send("✅ 無地址變更");
 
-  console.log(`🔍 判斷結果：${action}`);
   customerStore[id] = { defaultHash, extraHash };
-  return sendNotification(customer, action, res);
+
+  const body = formatEmailBody(customer, action);
+  try {
+    await sendNotification([process.env.EMAIL_USER, customer.email], `📢 客戶地址${action}`, body);
+    res.send(`📨 已寄出通知：${action}`);
+  } catch (err) {
+    res.status(500).send("❌ 郵件寄送失敗");
+  }
 });
 
-// 🗑️ 刪除帳戶處理（清除記憶並發通知信）
-app.post("/delete-account", (req, res) => {
+// 🧾 刪除帳戶通知
+app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
+  delete customerStore[id];
 
-  if (!id || !email) {
-    return res.status(400).send("❌ 缺少必要欄位（id 或 email）");
+  const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+  const msg = `🗑️ 客戶已刪除帳戶\n\n👤 姓名：${first_name} ${last_name}\n📧 電郵：${email}\n🕒 時間：${time}（香港時間）`;
+
+  try {
+    await sendNotification(email, "✅ 您的帳戶已成功刪除", `親愛的 ${first_name}：\n\n您已成功刪除帳戶。若有需要可重新註冊。\n\n德成電業`);
+    await sendNotification(process.env.EMAIL_USER, "🗑️ 有客戶刪除帳戶", msg);
+    res.send("✅ 帳戶資料已刪除並已通知雙方");
+  } catch (err) {
+    res.status(500).send("❌ 刪除通知發送失敗");
   }
-
-  // 刪除記憶資料
-  if (customerStore[id]) {
-    delete customerStore[id];
-    console.log(`🧹 已刪除記憶資料 for 客戶 #${id}`);
-  } else {
-    console.log(`ℹ️ 無需刪除，客戶 #${id} 無記憶資料`);
-  }
-
-  const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-
-  const msg = `👋 ${first_name || ""} ${last_name || ""} 您好，
-
-您已成功刪除 Shopify 帳戶。
-我們已於 ${createdAt}（香港時間）移除與您相關的所有地址通知記錄與系統記憶。
-
-🧠 所有紀錄已被永久清除，若您日後重新註冊，我們將視為全新帳戶。
-
-謝謝您曾使用我們的服務 🙏`;
-
-  transporter.sendMail({
-    from: `"德成電業客服中心" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: "✅ 您的帳戶資料已刪除",
-    text: msg
-  }).then(() => {
-    console.log(`📨 已通知 ${email}：帳戶已刪除`);
-    res.send("✅ 帳戶資料已刪除並通知用戶");
-  }).catch(err => {
-    console.error("❌ 寄信失敗：", err);
-    res.status(500).send("❌ 通知寄出失敗");
-  });
 });
 
-// ✅ 測試首頁
+// 🧾 模擬註冊通知
+app.post("/webhook/new-customer", async (req, res) => {
+  const { email, first_name, last_name } = req.body;
+  const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+  const msg = `🆕 有新客戶註冊：\n\n姓名：${first_name} ${last_name}\n電郵：${email}\n時間：${time}（香港時間）`;
+
+  try {
+    await sendNotification(process.env.EMAIL_USER, "🆕 有新客戶註冊帳號", msg);
+    res.send("✅ 公司已收到新客戶通知");
+  } catch (err) {
+    res.status(500).send("❌ 新客戶通知發送失敗");
+  }
+});
+
 app.get("/", (req, res) => {
-  res.send("✅ Webhook 伺服器正在運行。請使用 POST /webhook 傳送 Shopify 客戶資料。");
+  res.send("✅ Webhook 伺服器正常運行");
 });
 
-// 🚀 啟動伺服器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`📡 Webhook 啟動於 http://localhost:${PORT}`);
