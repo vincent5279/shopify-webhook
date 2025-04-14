@@ -44,15 +44,15 @@ app.post("/webhook", (req, res) => {
   const hasDefault = defaultId !== null;
 
   // ✅ 預設地址優先處理並 return，避免誤判為地址更新
-  if (!hadDefault && hasDefault) {
-    action = "加入預設地址";
-  } else if (hadDefault && !hasDefault) {
-    action = "刪除預設地址";
-  } else if (defaultId !== last.defaultId) {
-    action = "變更預設地址";
-  }
+  if (defaultId !== last.defaultId) {
+    if (!hadDefault && hasDefault) {
+      action = "加入預設地址";
+    } else if (hadDefault && !hasDefault) {
+      action = "刪除預設地址";
+    } else {
+      action = "變更預設地址";
+    }
 
-  if (action) {
     const body = buildEmailBody(customer, action);
     sendNotification(customer, action, body, res);
     customerStore[id] = { addressCount, hash, updatedAt, defaultId };
