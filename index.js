@@ -1,85 +1,31 @@
-// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 精準邏輯處理）
+// 📦 Shopify 客戶地址通知系統（繁體中文 + 精準邏輯）
+// 功能：每次變更預設地址或額外地址時準確發送對應通知（新增/變更/刪除）
 
 const express = require("express");
-const bodyParser = require("body-parser");
-const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const { DateTime } = require("luxon");
+const nodemailer = require("nodemailer");
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
-const customerStore = {}; // { [customerId]: { addressesHash, defaultHash } }
+const customerStore = {}; // { [customerId]: { defaultHash, extraHash } }
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.EMAIL_USER || "takshing78@gmail.com",
-    pass: process.env.EMAIL_PASS || ""
+    pass: process.env.EMAIL_PASS || "whfa ugtr frbg tujw"
   }
 });
-
-app.post("/webhook", (req, res) => {
-  const customer = req.body;
-  const id = customer.id.toString();
-  const addresses = customer.addresses || [];
-  const defaultAddress = customer.default_address || null;
-
-  const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
-  const extraAddresses = addresses.filter(a => a.id !== defaultAddress?.id);
-  const extraHash = hashAddresses(extraAddresses);
-
-  const last = customerStore[id];
-
-  let action = null;
-
-  if (!last) {
-    // 第一次收到：根據實際狀況決定
-    if (defaultHash) {
-      action = "新增地址";
-    } else if (extraHash) {
-      action = "新增地址";
-    } else {
-      return res.send("✅ 第一次接收，但沒有地址，略過");
-    }
-  } else {
-    if (!last.defaultHash && defaultHash) {
-      action = "加入預設地址";
-    } else if (last.defaultHash && !defaultHash) {
-      action = "刪除預設地址";
-    } else if (last.defaultHash !== defaultHash) {
-      action = "變更預設地址";
-    } else if (!last.addressesHash && extraHash) {
-      action = "新增地址";
-    } else if (last.addressesHash && !extraHash) {
-      action = "刪除地址";
-    } else if (last.addressesHash !== extraHash) {
-      action = "更新地址";
-    } else {
-      return res.send("✅ 無地址變更");
-    }
-  }
-
-  const body = buildEmailBody(customer, action);
-  sendNotification(customer, action, body, res);
-  customerStore[id] = { addressesHash: extraHash, defaultHash };
-});
-
-function sendNotification(customer, action, body, res) {
-  transporter.sendMail({
-    from: process.env.EMAIL_USER || "takshing78@gmail.com",
-    to: process.env.EMAIL_USER || "takshing78@gmail.com",
-    subject: `📢 客戶地址${action}`,
-    text: body
-  }, (err, info) => {
-    if (err) return res.status(500).send("❌ 寄信錯誤");
-    res.send(`📨 已寄出通知：${action}`);
-  });
-}
 
 function hashAddresses(addresses) {
-  const content = addresses.map(a => `${a.address1}-${a.address2}-${a.city}-${a.province}-${a.zip}-${a.country}`).join("|").toLowerCase();
-  return crypto.createHash("md5").update(content).digest("hex");
+  if (!addresses || addresses.length === 0) return "";
+  const content = addresses
+    .map(a => `${a.address1}-${a.address2}-${a.city}-${a.province}-${a.zip}-${a.country}`)
+    .join("|")
+    .toLowerCase();
+  return crypto.createHash("sha256").update(content).digest("hex");
 }
 
 function buildEmailBody(customer, action) {
@@ -110,11 +56,59 @@ function buildEmailBody(customer, action) {
   return body;
 }
 
-const PORT = process.env.PORT || 3000;
+function sendNotification(customer, action, res) {
+  const body = buildEmailBody(customer, action);
+  transporter.sendMail({
+    from: process.env.EMAIL_USER,
+    to: process.env.EMAIL_USER,
+    subject: `📢 客戶地址${action}`,
+    text: body
+  }, (err) => {
+    if (err) return res.status(500).send("❌ 寄信錯誤");
+    res.send(`📨 已寄出通知：${action}`);
+  });
+}
+
+app.post("/webhook", (req, res) => {
+  const customer = req.body;
+  const id = customer.id.toString();
+
+  const addresses = customer.addresses || [];
+  const defaultAddress = customer.default_address || null;
+  const extraAddresses = addresses.filter(a => a.id !== defaultAddress?.id);
+
+  const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
+  const extraHash = hashAddresses(extraAddresses);
+
+  const last = customerStore[id] || { defaultHash: "", extraHash: "" };
+
+  let action = null;
+
+  if (!last.defaultHash && defaultHash) {
+    action = "加入預設地址";
+  } else if (last.defaultHash && !defaultHash) {
+    action = "刪除預設地址";
+  } else if (last.defaultHash !== defaultHash) {
+    action = "變更預設地址";
+  } else if (!last.extraHash && extraHash) {
+    action = "新增地址";
+  } else if (last.extraHash && !extraHash) {
+    action = "刪除地址";
+  } else if (last.extraHash !== extraHash) {
+    action = "更新地址";
+  } else {
+    return res.send("✅ 無地址變更");
+  }
+
+  customerStore[id] = { defaultHash, extraHash };
+  sendNotification(customer, action, res);
+});
+
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正在運行。請使用 POST /webhook 傳送 Shopify 客戶資料。");
 });
 
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`📡 Webhook 伺服器啟動於 http://localhost:${PORT}`);
+  console.log(`📡 Webhook 啟動於 http://localhost:${PORT}`);
 });
