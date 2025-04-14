@@ -43,7 +43,10 @@ app.post("/webhook", (req, res) => {
   const hadDefault = last.defaultId !== null;
   const hasDefault = defaultId !== null;
 
-  // ✅ 預設地址優先處理並 return，避免誤判為地址更新
+  // ✅ 修正首次 webhook 被誤判為加入預設地址的問題：先檢查 updatedAt 是否重複
+  if (updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
+
+  // ✅ 預設地址優先處理
   if (defaultId !== last.defaultId) {
     if (!hadDefault && hasDefault) {
       action = "加入預設地址";
@@ -60,8 +63,6 @@ app.post("/webhook", (req, res) => {
   }
 
   // 其餘邏輯處理地址內容變化
-  if (updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
-
   if (addressCount > last.addressCount) {
     action = "新增地址";
   } else if (addressCount < last.addressCount) {
