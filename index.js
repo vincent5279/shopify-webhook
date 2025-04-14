@@ -1,5 +1,5 @@
 // 📦 Shopify 客戶地址通知系統（繁體中文版本）
-// 功能：當客戶新增、修改或刪除地址時，自動寄送通知信
+// 功能：當客戶新增、修改、刪除地址或變更預設地址時，自動寄送通知信
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -9,15 +9,15 @@ const crypto = require("crypto");
 const app = express();
 app.use(bodyParser.json());
 
-// 🧠 暫存記憶體資料（建議正式部署請改用資料庫）
-const customerStore = {}; // { [customerId]: { addressCount, hash, updatedAt } }
+// 🧠 暫存記憶體資料（正式請用資料庫）
+const customerStore = {}; // { [customerId]: { addressCount, hash, updatedAt, defaultId } }
 
-// ✉️ Gmail SMTP 設定（需使用 App 密碼）
+// ✉️ Gmail SMTP 設定
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: "takshing78@gmail.com",
-    pass: "whfa ugtr frbg tujw"
+    pass: "" // 請放 App 密碼或使用環境變數
   }
 });
 
@@ -29,13 +29,22 @@ app.post("/webhook", (req, res) => {
   const updatedAt = customer.updated_at;
   const addressCount = addresses.length;
   const hash = hashAddresses(addresses);
+  const defaultId = customer.default_address?.id || null;
 
-  const last = customerStore[id] || { addressCount: 0, hash: "", updatedAt: "" };
+  const last = customerStore[id] || {
+    addressCount: 0,
+    hash: "",
+    updatedAt: "",
+    defaultId: null
+  };
+
   let action = null;
 
   if (updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
 
-  if (addressCount > last.addressCount) {
+  if (defaultId !== last.defaultId) {
+    action = "變更預設地址";
+  } else if (addressCount > last.addressCount) {
     action = "新增地址";
   } else if (addressCount < last.addressCount) {
     action = "刪除地址";
@@ -54,14 +63,14 @@ app.post("/webhook", (req, res) => {
     text: body
   }, (err, info) => {
     if (err) return res.status(500).send("❌ 寄信錯誤");
-    customerStore[id] = { addressCount, hash, updatedAt };
+    customerStore[id] = { addressCount, hash, updatedAt, defaultId };
     res.send(`📨 已寄出通知：${action}`);
   });
 });
 
-// 🔍 建立地址內容的 hash 以辨識變更
+// 🧠 建立地址內容的 hash
 function hashAddresses(addresses) {
-  const content = addresses.map(a => `${a.address1}-${a.city}-${a.zip}`).join("|").toLowerCase();
+  const content = addresses.map(a => `${a.address1}-${a.city}`).join("|").toLowerCase();
   return crypto.createHash("md5").update(content).digest("hex");
 }
 
@@ -93,7 +102,7 @@ function buildEmailBody(customer, action) {
   return body;
 }
 
-// 🚀 啟動本地伺服器
+// 🚀 啟動伺服器
 const PORT = process.env.PORT || 3000;
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正在運行。請使用 POST /webhook 傳送 Shopify 客戶資料。");
