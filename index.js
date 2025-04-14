@@ -73,6 +73,8 @@ app.post("/webhook", (req, res) => {
   const customer = req.body;
   const id = customer.id.toString();
 
+  console.log(`📥 Webhook 收到來自客戶 #${id}`);
+
   const addresses = customer.addresses || [];
   const defaultAddress = customer.default_address || null;
   const extraAddresses = addresses.filter(a => a.id !== defaultAddress?.id);
@@ -84,10 +86,10 @@ app.post("/webhook", (req, res) => {
   let action = null;
 
   if (isFirstTime) {
-    // 第一次，不要判斷變更，只處理「是否有地址」
     if (addresses.length > 0) {
       action = "新增地址";
     } else {
+      console.log("✅ 第一次接收，但無地址");
       return res.send("✅ 第一次接收，無地址，略過");
     }
   } else {
@@ -106,11 +108,12 @@ app.post("/webhook", (req, res) => {
     } else if (last.extraHash !== extraHash) {
       action = "更新地址";
     } else {
+      console.log("✅ 無地址變更");
       return res.send("✅ 無地址變更");
     }
   }
 
-  // 儲存目前狀態
+  console.log(`🔍 判斷結果：${action}`);
   customerStore[id] = { defaultHash, extraHash };
-  sendNotification(customer, action, res);
+  return sendNotification(customer, action, res);
 });
