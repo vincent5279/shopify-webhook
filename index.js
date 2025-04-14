@@ -1,5 +1,4 @@
-// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 即時寄信時間）
-// 功能：當客戶新增、修改、刪除地址、變更/加入/刪除預設地址時，自動寄送通知信
+// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 精準預設與額外地址變更邏輯）
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -10,10 +9,8 @@ const { DateTime } = require("luxon");
 const app = express();
 app.use(bodyParser.json());
 
-// 🧠 暫存記憶體資料（正式請用資料庫）
-const customerStore = {}; // { [customerId]: { addressCount, hash, updatedAt, defaultId } }
+const customerStore = {}; // { [customerId]: { addressesHash, defaultHash } }
 
-// ✉️ Gmail SMTP 設定
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -22,49 +19,39 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// 📩 接收 Shopify Webhook
 app.post("/webhook", (req, res) => {
   const customer = req.body;
   const id = customer.id.toString();
   const addresses = customer.addresses || [];
-  const updatedAt = customer.updated_at;
-  const addressCount = addresses.length;
-  const hash = hashAddresses(addresses);
-  const defaultId = customer.default_address?.id || null;
+  const defaultAddress = customer.default_address || null;
 
-  const last = customerStore[id];
+  const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
+  const extraAddresses = addresses.filter(a => a.id !== defaultAddress?.id);
+  const extraHash = hashAddresses(extraAddresses);
+
+  const last = customerStore[id] || { addressesHash: "", defaultHash: "" };
 
   let action = null;
-  const hadDefault = last?.defaultId !== null && last?.defaultId !== undefined;
-  const hasDefault = defaultId !== null;
 
-  const isFirstTime = !last;
-
-  if (!isFirstTime && updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
-
-  // ✅ 判斷變更預設地址（ID 有變）
-  if (!isFirstTime && defaultId !== last.defaultId) {
+  if (!last.defaultHash && defaultHash) {
+    action = "加入預設地址";
+  } else if (last.defaultHash && !defaultHash) {
+    action = "刪除預設地址";
+  } else if (last.defaultHash !== defaultHash) {
     action = "變更預設地址";
-  }
-  // ✅ 判斷新增地址（第一次或數量增加）
-  else if (isFirstTime || addressCount > last.addressCount) {
+  } else if (!last.addressesHash && extraHash) {
     action = "新增地址";
-  }
-  // ✅ 判斷刪除地址
-  else if (addressCount < last.addressCount) {
+  } else if (last.addressesHash && !extraHash) {
     action = "刪除地址";
-  }
-  // ✅ 判斷地址內容有變
-  else if (hash !== last.hash) {
+  } else if (last.addressesHash !== extraHash) {
     action = "更新地址";
-  }
-  else {
+  } else {
     return res.send("✅ 無地址變更");
   }
 
   const body = buildEmailBody(customer, action);
   sendNotification(customer, action, body, res);
-  customerStore[id] = { addressCount, hash, updatedAt, defaultId };
+  customerStore[id] = { addressesHash: extraHash, defaultHash };
 });
 
 function sendNotification(customer, action, body, res) {
@@ -79,18 +66,13 @@ function sendNotification(customer, action, body, res) {
   });
 }
 
-// 🧠 建立地址內容的 hash
 function hashAddresses(addresses) {
-  const content = addresses.map(a => `${a.address1}-${a.city}`).join("|").toLowerCase();
+  const content = addresses.map(a => `${a.address1}-${a.address2}-${a.city}-${a.province}-${a.zip}-${a.country}`).join("|").toLowerCase();
   return crypto.createHash("md5").update(content).digest("hex");
 }
 
-// 📤 組成郵件內容
 function buildEmailBody(customer, action) {
-  const createdAt = DateTime.now()
-    .setZone("Asia/Hong_Kong")
-    .toFormat("yyyy/MM/dd HH:mm:ss");
-
+  const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
   body += `──────────────────\n`;
   body += `👤 姓名      ：${customer.first_name} ${customer.last_name}\n`;
@@ -98,12 +80,12 @@ function buildEmailBody(customer, action) {
   body += `🗓️ 通知寄出時間：${createdAt}（香港時間）\n`;
   body += `──────────────────\n\n`;
 
-  if (customer.addresses.length === 0) {
+  const addresses = customer.addresses || [];
+  if (addresses.length === 0) {
     body += `🏠 地址列表：目前無任何地址\n`;
   } else {
-    body += `🏠 地址列表：共 ${customer.addresses.length} 筆\n`;
-
-    customer.addresses.forEach((addr, i) => {
+    body += `🏠 地址列表：共 ${addresses.length} 筆\n`;
+    addresses.forEach((addr, i) => {
       body += `\n【地址 ${i + 1}】──────────────────\n`;
       body += `🏢 公司    ：${addr.company || "未提供"}\n`;
       body += `📍 地址一  ：${addr.address1}\n`;
@@ -114,11 +96,9 @@ function buildEmailBody(customer, action) {
       body += `📞 電話    ：${addr.phone || "未提供"}\n`;
     });
   }
-
   return body;
 }
 
-// 🚀 啟動伺服器
 const PORT = process.env.PORT || 3000;
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正在運行。請使用 POST /webhook 傳送 Shopify 客戶資料。");
