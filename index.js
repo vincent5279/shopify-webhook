@@ -94,14 +94,13 @@ app.post("/webhook", (req, res) => {
   const extraChanged = last.extraHash !== extraHash;
 
   if (isFirstTime && !defaultChanged && !extraChanged) {
-    console.log("✅ 第一次接收但無地址變更，略過");
-    return res.send("✅ 第一次接收但無地址變更");
+    console.log("✅ 第一次 webhook，無地址變更");
+    return res.send("✅ 第一次無地址變更，略過");
   }
-
-  // 📍 判斷邏輯開始
-  if (!last.defaultHash && defaultHash && defaultChanged) {
+  
+  if (!isFirstTime && !last.defaultHash && defaultHash) {
     action = "加入預設地址";
-  } else if (last.defaultHash && !defaultHash) {
+  } else if (!isFirstTime && last.defaultHash && !defaultHash) {
     action = "刪除預設地址";
   } else if (defaultChanged) {
     action = "變更預設地址";
@@ -114,7 +113,7 @@ app.post("/webhook", (req, res) => {
   } else {
     console.log("✅ 無地址變更");
     return res.send("✅ 無地址變更");
-  }
+  }  
 
   console.log(`🔍 判斷結果：${action}`);
   customerStore[id] = { defaultHash, extraHash };
