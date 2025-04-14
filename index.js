@@ -1,15 +1,14 @@
-// 📦 Shopify 客戶地址與帳戶通知系統（繁體中文 + 精準邏輯 + 註冊 + 刪除通知）
+// 📦 Shopify 客戶地址與帳戶通知系統（繁體中文 + 精準邏輯 + 註冊 + 刪除通知 + CORS）
 
 const express = require("express");
 const crypto = require("crypto");
 const { DateTime } = require("luxon");
 const nodemailer = require("nodemailer");
+const cors = require("cors");
 
 const app = express();
-app.use(express.json());
-
-const cors = require("cors");
 app.use(cors());
+app.use(express.json());
 
 const customerStore = {}; // { [customerId]: { defaultHash, extraHash } }
 
@@ -32,27 +31,45 @@ function hashAddresses(addresses) {
 
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-  let body = `📬 客戶地址${action}通知\n`;
-  body += `──────────────────\n`;
-  body += `👤 姓名      ：${customer.first_name} ${customer.last_name}\n`;
-  body += `📧 電郵      ：${customer.email}\n`;
-  body += `🗓️ 通知寄出時間：${createdAt}（香港時間）\n`;
-  body += `──────────────────\n\n`;
+  let body = `📬 客戶地址${action}通知
+`;
+  body += `──────────────────
+`;
+  body += `👤 姓名：${customer.first_name} ${customer.last_name}
+`;
+  body += `📧 電郵：${customer.email}
+`;
+  body += `🗓️ 通知寄出時間：${createdAt}（香港時間）
+`;
+  body += `──────────────────
+
+`;
 
   const addresses = customer.addresses || [];
   if (addresses.length === 0) {
-    body += `🏠 地址列表：目前無任何地址\n`;
+    body += `🏠 地址列表：目前無任何地址
+`;
   } else {
-    body += `🏠 地址列表：共 ${addresses.length} 筆\n`;
+    body += `🏠 地址列表：共 ${addresses.length} 筆
+`;
     addresses.forEach((addr, i) => {
-      body += `\n【地址 ${i + 1}】──────────────────\n`;
-      body += `🏢 公司    ：${addr.company || "未提供"}\n`;
-      body += `📍 地址一  ：${addr.address1}\n`;
-      body += `📍 地址二  ：${addr.address2 || "未提供"}\n`;
-      body += `🏙️ 城市    ：${addr.city}\n`;
-      body += `🏞️ 省份    ：${addr.province}\n`;
-      body += `🌍 國家    ：${addr.country}\n`;
-      body += `📞 電話    ：${addr.phone || "未提供"}\n`;
+      body += `
+【地址 ${i + 1}】──────────────────
+`;
+      body += `🏢 公司：${addr.company || "未提供"}
+`;
+      body += `📍 地址一：${addr.address1}
+`;
+      body += `📍 地址二：${addr.address2 || "未提供"}
+`;
+      body += `🏙️ 城市：${addr.city}
+`;
+      body += `🏞️ 省份：${addr.province}
+`;
+      body += `🌍 國家：${addr.country}
+`;
+      body += `📞 電話：${addr.phone || "未提供"}
+`;
     });
   }
   return body;
@@ -67,7 +84,7 @@ function sendNotification(to, subject, text) {
   });
 }
 
-// 🧾 地址變動 Webhook
+// 地址變動 Webhook
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const id = customer.id.toString();
@@ -106,16 +123,24 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🧾 刪除帳戶通知
+// 刪除帳戶通知
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   delete customerStore[id];
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-  const msg = `🗑️ 客戶已刪除帳戶\n\n👤 姓名：${first_name} ${last_name}\n📧 電郵：${email}\n🕒 時間：${time}（香港時間）`;
+  const msg = `🗑️ 客戶已刪除帳戶
+
+👤 姓名：${first_name} ${last_name}
+📧 電郵：${email}
+🕒 時間：${time}（香港時間）`;
 
   try {
-    await sendNotification(email, "✅ 您的帳戶已成功刪除", `親愛的 ${first_name}：\n\n您已成功刪除帳戶。若有需要可重新註冊。\n\n德成電業`);
+    await sendNotification(email, "✅ 您的帳戶已成功刪除", `親愛的 ${first_name}：
+
+您已成功刪除帳戶。若有需要可重新註冊。
+
+德成電業`);
     await sendNotification(process.env.EMAIL_USER, "🗑️ 有客戶刪除帳戶", msg);
     res.send("✅ 帳戶資料已刪除並已通知雙方");
   } catch (err) {
@@ -123,11 +148,15 @@ app.post("/delete-account", async (req, res) => {
   }
 });
 
-// 🧾 模擬註冊通知
+// 註冊通知
 app.post("/webhook/new-customer", async (req, res) => {
   const { email, first_name, last_name } = req.body;
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-  const msg = `🆕 有新客戶註冊：\n\n姓名：${first_name} ${last_name}\n電郵：${email}\n時間：${time}（香港時間）`;
+  const msg = `🆕 有新客戶註冊：
+
+姓名：${first_name} ${last_name}
+電郵：${email}
+時間：${time}（香港時間）`;
 
   try {
     await sendNotification(process.env.EMAIL_USER, "🆕 有新客戶註冊帳號", msg);
