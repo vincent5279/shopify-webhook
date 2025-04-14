@@ -9,6 +9,10 @@ const nodemailer = require("nodemailer");
 const app = express();
 app.use(express.json());
 
+// 最上面加
+const cors = require("cors");
+app.use(cors());
+
 const customerStore = {}; // { [customerId]: { defaultHash, extraHash } }
 
 const transporter = nodemailer.createTransport({
