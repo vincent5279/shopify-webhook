@@ -31,45 +31,27 @@ function hashAddresses(addresses) {
 
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-  let body = `📬 客戶地址${action}通知
-`;
-  body += `──────────────────
-`;
-  body += `👤 姓名：${customer.first_name} ${customer.last_name}
-`;
-  body += `📧 電郵：${customer.email}
-`;
-  body += `🗓️ 通知寄出時間：${createdAt}（香港時間）
-`;
-  body += `──────────────────
-
-`;
+  let body = `📬 客戶地址${action}通知\n`;
+  body += `──────────────────\n`;
+  body += `👤 姓名：${customer.first_name} ${customer.last_name}\n`;
+  body += `📧 電郵：${customer.email}\n`;
+  body += `🗓️ 通知寄出時間：${createdAt}（香港時間）\n`;
+  body += `──────────────────\n\n`;
 
   const addresses = customer.addresses || [];
   if (addresses.length === 0) {
-    body += `🏠 地址列表：目前無任何地址
-`;
+    body += `🏠 地址列表：目前無任何地址\n`;
   } else {
-    body += `🏠 地址列表：共 ${addresses.length} 筆
-`;
+    body += `🏠 地址列表：共 ${addresses.length} 筆\n`;
     addresses.forEach((addr, i) => {
-      body += `
-【地址 ${i + 1}】──────────────────
-`;
-      body += `🏢 公司：${addr.company || "未提供"}
-`;
-      body += `📍 地址一：${addr.address1}
-`;
-      body += `📍 地址二：${addr.address2 || "未提供"}
-`;
-      body += `🏙️ 城市：${addr.city}
-`;
-      body += `🏞️ 省份：${addr.province}
-`;
-      body += `🌍 國家：${addr.country}
-`;
-      body += `📞 電話：${addr.phone || "未提供"}
-`;
+      body += `\n【地址 ${i + 1}】──────────────────\n`;
+      body += `🏢 公司：${addr.company || "未提供"}\n`;
+      body += `📍 地址一：${addr.address1}\n`;
+      body += `📍 地址二：${addr.address2 || "未提供"}\n`;
+      body += `🏙️ 城市：${addr.city}\n`;
+      body += `🏞️ 省份：${addr.province}\n`;
+      body += `🌍 國家：${addr.country}\n`;
+      body += `📞 電話：${addr.phone || "未提供"}\n`;
     });
   }
   return body;
@@ -77,7 +59,7 @@ function formatEmailBody(customer, action) {
 
 function sendNotification(to, subject, text) {
   return transporter.sendMail({
-    from: process.env.EMAIL_USER,
+    from: `"德成電業客服中心" <${process.env.EMAIL_USER}>`,
     to,
     subject,
     text
@@ -129,19 +111,21 @@ app.post("/delete-account", async (req, res) => {
   delete customerStore[id];
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-  const msg = `🗑️ 客戶已刪除帳戶
 
-👤 姓名：${first_name} ${last_name}
-📧 電郵：${email}
-🕒 時間：${time}（香港時間）`;
+  const msg_to_user = `👋 ${first_name} ${last_name} 您好，
+
+您已成功刪除 Shopify 帳戶。
+我們已於 ${time}（香港時間）移除與您相關的所有地址通知記錄與系統記憶。
+
+🧠 所有紀錄已被永久清除，若您日後重新註冊，我們將視為全新帳戶。
+
+謝謝您曾使用我們的服務 🙏`;
+
+  const msg_to_admin = `🗑️ 客戶已刪除帳戶\n\n👤 姓名：${first_name} ${last_name}\n📧 電郵：${email}\n🕒 時間：${time}（香港時間）`;
 
   try {
-    await sendNotification(email, "✅ 您的帳戶已成功刪除", `親愛的 ${first_name}：
-
-您已成功刪除帳戶。若有需要可重新註冊。
-
-德成電業`);
-    await sendNotification(process.env.EMAIL_USER, "🗑️ 有客戶刪除帳戶", msg);
+    await sendNotification(email, "✅ 您的帳戶已成功刪除", msg_to_user);
+    await sendNotification(process.env.EMAIL_USER, "🗑️ 有客戶刪除帳戶", msg_to_admin);
     res.send("✅ 帳戶資料已刪除並已通知雙方");
   } catch (err) {
     res.status(500).send("❌ 刪除通知發送失敗");
