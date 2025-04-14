@@ -144,7 +144,7 @@ app.post("/delete-account", async (req, res) => {
   try {
     await sendNotification({
       toAdmin: true,
-      toCustomer: true,
+      toCustomer: false,
       customer: { email },
       subject: "🗑️ 有客戶刪除帳戶",
       body: msg_to_admin
