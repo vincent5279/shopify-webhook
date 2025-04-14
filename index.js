@@ -1,5 +1,5 @@
 // 📦 Shopify 客戶地址通知系統（繁體中文 + 精準邏輯）
-// 功能：每次變更預設地址或額外地址時準確發送對應通知（新增/變更/刪除）
+// 功能：每次變更預設地址或額外地址時準確發送對應通知（新增/變更/刪除）＋帳戶刪除通知
 
 const express = require("express");
 const crypto = require("crypto");
@@ -59,7 +59,7 @@ function buildEmailBody(customer, action) {
 function sendNotification(customer, action, res) {
   const body = buildEmailBody(customer, action);
   transporter.sendMail({
-    from: process.env.EMAIL_USER,
+    from: `"德成電業客服中心" <${process.env.EMAIL_USER}>`,
     to: process.env.EMAIL_USER,
     subject: `📢 客戶地址${action}`,
     text: body
@@ -72,6 +72,7 @@ function sendNotification(customer, action, res) {
   });
 }
 
+// 📩 Shopify 地址 Webhook
 app.post("/webhook", (req, res) => {
   const customer = req.body;
   const id = customer.id.toString();
@@ -86,9 +87,7 @@ app.post("/webhook", (req, res) => {
   const extraHash = hashAddresses(extraAddresses);
 
   const last = customerStore[id] || { defaultHash: "", extraHash: "" };
-  let action = null;
 
-  // ✅ 加入判斷，避免第一次誤發「加入預設地址」
   const isFirstTime = !customerStore[id];
   const defaultChanged = last.defaultHash !== defaultHash;
   const extraChanged = last.extraHash !== extraHash;
@@ -97,7 +96,9 @@ app.post("/webhook", (req, res) => {
     console.log("✅ 第一次 webhook，無地址變更");
     return res.send("✅ 第一次無地址變更，略過");
   }
-  
+
+  let action = null;
+
   if (!isFirstTime && !last.defaultHash && defaultHash) {
     action = "加入預設地址";
   } else if (!isFirstTime && last.defaultHash && !defaultHash) {
@@ -113,7 +114,7 @@ app.post("/webhook", (req, res) => {
   } else {
     console.log("✅ 無地址變更");
     return res.send("✅ 無地址變更");
-  }  
+  }
 
   console.log(`🔍 判斷結果：${action}`);
   customerStore[id] = { defaultHash, extraHash };
@@ -128,7 +129,7 @@ app.post("/delete-account", (req, res) => {
     return res.status(400).send("❌ 缺少必要欄位（id 或 email）");
   }
 
-  // 1️⃣ 刪除記憶資料
+  // 刪除記憶資料
   if (customerStore[id]) {
     delete customerStore[id];
     console.log(`🧹 已刪除記憶資料 for 客戶 #${id}`);
@@ -136,7 +137,6 @@ app.post("/delete-account", (req, res) => {
     console.log(`ℹ️ 無需刪除，客戶 #${id} 無記憶資料`);
   }
 
-  // 2️⃣ 發送帳戶刪除通知
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
 
   const msg = `👋 ${first_name || ""} ${last_name || ""} 您好，
@@ -149,7 +149,7 @@ app.post("/delete-account", (req, res) => {
 謝謝您曾使用我們的服務 🙏`;
 
   transporter.sendMail({
-    from: process.env.EMAIL_USER,
+    from: `"德成電業客服中心" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: "✅ 您的帳戶資料已刪除",
     text: msg
@@ -162,10 +162,12 @@ app.post("/delete-account", (req, res) => {
   });
 });
 
+// ✅ 測試首頁
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正在運行。請使用 POST /webhook 傳送 Shopify 客戶資料。");
 });
 
+// 🚀 啟動伺服器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`📡 Webhook 啟動於 http://localhost:${PORT}`);
