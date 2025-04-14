@@ -63,9 +63,12 @@ function sendNotification(customer, action, res) {
     to: process.env.EMAIL_USER,
     subject: `📢 客戶地址${action}`,
     text: body
-  }, (err) => {
-    if (err) return res.status(500).send("❌ 寄信錯誤");
+  }).then(() => {
+    console.log(`📨 成功寄出：${action}`);
     res.send(`📨 已寄出通知：${action}`);
+  }).catch(err => {
+    console.error("❌ 寄信錯誤：", err);
+    res.status(500).send("❌ 郵件發送失敗");
   });
 }
 
@@ -116,4 +119,13 @@ app.post("/webhook", (req, res) => {
   console.log(`🔍 判斷結果：${action}`);
   customerStore[id] = { defaultHash, extraHash };
   return sendNotification(customer, action, res);
+});
+
+app.get("/", (req, res) => {
+  res.send("✅ Webhook 伺服器正在運行。請使用 POST /webhook 傳送 Shopify 客戶資料。");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`📡 Webhook 啟動於 http://localhost:${PORT}`);
 });
