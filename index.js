@@ -32,22 +32,16 @@ app.post("/webhook", (req, res) => {
   const hash = hashAddresses(addresses);
   const defaultId = customer.default_address?.id || null;
 
-  const last = customerStore[id] || {
-    addressCount: 0,
-    hash: "",
-    updatedAt: "",
-    defaultId: null
-  };
+  const last = customerStore[id];
 
   let action = null;
-  const hadDefault = last.defaultId !== null;
+  const hadDefault = last?.defaultId !== null && last?.defaultId !== undefined;
   const hasDefault = defaultId !== null;
 
-  // ✅ 修正首次 webhook 被誤判為加入預設地址的問題：先檢查 updatedAt 是否重複
-  if (updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
+  const isFirstTime = !last;
 
   // ✅ 預設地址優先處理
-  if (defaultId !== last.defaultId) {
+  if (isFirstTime || defaultId !== last.defaultId) {
     if (!hadDefault && hasDefault) {
       action = "加入預設地址";
     } else if (hadDefault && !hasDefault) {
@@ -62,8 +56,10 @@ app.post("/webhook", (req, res) => {
     return;
   }
 
+  if (!isFirstTime && updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
+
   // 其餘邏輯處理地址內容變化
-  if (addressCount > last.addressCount) {
+  if (isFirstTime || addressCount > last.addressCount) {
     action = "新增地址";
   } else if (addressCount < last.addressCount) {
     action = "刪除地址";
