@@ -1,5 +1,5 @@
-// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon）
-// 功能：當客戶新增、修改、刪除地址或變更預設地址時，自動寄送通知信
+// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 預設地址變更邏輯）
+// 功能：當客戶新增、修改、刪除地址、變更/加入/刪除預設地址時，自動寄送通知信
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -18,7 +18,7 @@ const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.EMAIL_USER || "takshing78@gmail.com",
-    pass: process.env.EMAIL_PASS || "whfa ugtr frbg tujw"
+    pass: process.env.EMAIL_PASS || ""
   }
 });
 
@@ -40,11 +40,18 @@ app.post("/webhook", (req, res) => {
   };
 
   let action = null;
+  const hadDefault = last.defaultId !== null;
+  const hasDefault = defaultId !== null;
 
-  if (updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
-
-  if (defaultId !== last.defaultId) {
+  // ✅ 預設地址處理邏輯
+  if (!hadDefault && hasDefault) {
+    action = "加入預設地址";
+  } else if (hadDefault && !hasDefault) {
+    action = "刪除預設地址";
+  } else if (defaultId !== last.defaultId) {
     action = "變更預設地址";
+  } else if (updatedAt === last.updatedAt) {
+    return res.send("⏩ 已處理，略過");
   } else if (addressCount > last.addressCount) {
     action = "新增地址";
   } else if (addressCount < last.addressCount) {
