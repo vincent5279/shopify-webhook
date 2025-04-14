@@ -1,11 +1,11 @@
-// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 預設地址變更邏輯）
+// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 完整預設地址處理）
 // 功能：當客戶新增、修改、刪除地址、變更/加入/刪除預設地址時，自動寄送通知信
 
 const express = require("express");
 const bodyParser = require("body-parser");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
-const { DateTime } = require("luxon"); // 使用 luxon 處理時區
+const { DateTime } = require("luxon");
 
 const app = express();
 app.use(bodyParser.json());
@@ -18,7 +18,7 @@ const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.EMAIL_USER || "takshing78@gmail.com",
-    pass: process.env.EMAIL_PASS || ""
+    pass: process.env.EMAIL_PASS || "whfa ugtr frbg tujw"
   }
 });
 
@@ -43,16 +43,26 @@ app.post("/webhook", (req, res) => {
   const hadDefault = last.defaultId !== null;
   const hasDefault = defaultId !== null;
 
-  // ✅ 預設地址處理邏輯
+  // ✅ 預設地址優先處理並 return，避免誤判為地址更新
   if (!hadDefault && hasDefault) {
     action = "加入預設地址";
   } else if (hadDefault && !hasDefault) {
     action = "刪除預設地址";
   } else if (defaultId !== last.defaultId) {
     action = "變更預設地址";
-  } else if (updatedAt === last.updatedAt) {
-    return res.send("⏩ 已處理，略過");
-  } else if (addressCount > last.addressCount) {
+  }
+
+  if (action) {
+    const body = buildEmailBody(customer, action);
+    sendNotification(customer, action, body, res);
+    customerStore[id] = { addressCount, hash, updatedAt, defaultId };
+    return;
+  }
+
+  // 其餘邏輯處理地址內容變化
+  if (updatedAt === last.updatedAt) return res.send("⏩ 已處理，略過");
+
+  if (addressCount > last.addressCount) {
     action = "新增地址";
   } else if (addressCount < last.addressCount) {
     action = "刪除地址";
@@ -63,7 +73,11 @@ app.post("/webhook", (req, res) => {
   }
 
   const body = buildEmailBody(customer, action);
+  sendNotification(customer, action, body, res);
+  customerStore[id] = { addressCount, hash, updatedAt, defaultId };
+});
 
+function sendNotification(customer, action, body, res) {
   transporter.sendMail({
     from: process.env.EMAIL_USER || "takshing78@gmail.com",
     to: process.env.EMAIL_USER || "takshing78@gmail.com",
@@ -71,10 +85,9 @@ app.post("/webhook", (req, res) => {
     text: body
   }, (err, info) => {
     if (err) return res.status(500).send("❌ 寄信錯誤");
-    customerStore[id] = { addressCount, hash, updatedAt, defaultId };
     res.send(`📨 已寄出通知：${action}`);
   });
-});
+}
 
 // 🧠 建立地址內容的 hash
 function hashAddresses(addresses) {
@@ -85,7 +98,7 @@ function hashAddresses(addresses) {
 // 📤 組成郵件內容
 function buildEmailBody(customer, action) {
   const createdAt = customer.created_at
-    ? DateTime.fromISO(customer.created_at, { zone: "utc" })
+    ? DateTime.fromJSDate(new Date(customer.created_at))
         .setZone("Asia/Hong_Kong")
         .toFormat("yyyy/MM/dd HH:mm:ss")
     : "未提供";
