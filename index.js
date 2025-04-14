@@ -1,4 +1,4 @@
-// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 精準預設與額外地址變更邏輯）
+// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 精準邏輯處理）
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -15,7 +15,7 @@ const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.EMAIL_USER || "takshing78@gmail.com",
-    pass: process.env.EMAIL_PASS || "whfa ugtr frbg tujw"
+    pass: process.env.EMAIL_PASS || ""
   }
 });
 
@@ -29,24 +29,35 @@ app.post("/webhook", (req, res) => {
   const extraAddresses = addresses.filter(a => a.id !== defaultAddress?.id);
   const extraHash = hashAddresses(extraAddresses);
 
-  const last = customerStore[id] || { addressesHash: "", defaultHash: "" };
+  const last = customerStore[id];
 
   let action = null;
 
-  if (!last.defaultHash && defaultHash) {
-    action = "加入預設地址";
-  } else if (last.defaultHash && !defaultHash) {
-    action = "刪除預設地址";
-  } else if (last.defaultHash !== defaultHash) {
-    action = "變更預設地址";
-  } else if (!last.addressesHash && extraHash) {
-    action = "新增地址";
-  } else if (last.addressesHash && !extraHash) {
-    action = "刪除地址";
-  } else if (last.addressesHash !== extraHash) {
-    action = "更新地址";
+  if (!last) {
+    // 第一次收到：根據實際狀況決定
+    if (defaultHash) {
+      action = "新增地址";
+    } else if (extraHash) {
+      action = "新增地址";
+    } else {
+      return res.send("✅ 第一次接收，但沒有地址，略過");
+    }
   } else {
-    return res.send("✅ 無地址變更");
+    if (!last.defaultHash && defaultHash) {
+      action = "加入預設地址";
+    } else if (last.defaultHash && !defaultHash) {
+      action = "刪除預設地址";
+    } else if (last.defaultHash !== defaultHash) {
+      action = "變更預設地址";
+    } else if (!last.addressesHash && extraHash) {
+      action = "新增地址";
+    } else if (last.addressesHash && !extraHash) {
+      action = "刪除地址";
+    } else if (last.addressesHash !== extraHash) {
+      action = "更新地址";
+    } else {
+      return res.send("✅ 無地址變更");
+    }
   }
 
   const body = buildEmailBody(customer, action);
