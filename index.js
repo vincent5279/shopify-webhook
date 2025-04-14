@@ -120,6 +120,48 @@ app.post("/webhook", (req, res) => {
   return sendNotification(customer, action, res);
 });
 
+// 🗑️ 刪除帳戶處理（清除記憶並發通知信）
+app.post("/delete-account", (req, res) => {
+  const { id, email, first_name, last_name } = req.body;
+
+  if (!id || !email) {
+    return res.status(400).send("❌ 缺少必要欄位（id 或 email）");
+  }
+
+  // 1️⃣ 刪除記憶資料
+  if (customerStore[id]) {
+    delete customerStore[id];
+    console.log(`🧹 已刪除記憶資料 for 客戶 #${id}`);
+  } else {
+    console.log(`ℹ️ 無需刪除，客戶 #${id} 無記憶資料`);
+  }
+
+  // 2️⃣ 發送帳戶刪除通知
+  const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+
+  const msg = `👋 ${first_name || ""} ${last_name || ""} 您好，
+
+您已成功刪除 Shopify 帳戶。
+我們已於 ${createdAt}（香港時間）移除與您相關的所有地址通知記錄與系統記憶。
+
+🧠 所有紀錄已被永久清除，若您日後重新註冊，我們將視為全新帳戶。
+
+謝謝您曾使用我們的服務 🙏`;
+
+  transporter.sendMail({
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: "✅ 您的帳戶資料已刪除",
+    text: msg
+  }).then(() => {
+    console.log(`📨 已通知 ${email}：帳戶已刪除`);
+    res.send("✅ 帳戶資料已刪除並通知用戶");
+  }).catch(err => {
+    console.error("❌ 寄信失敗：", err);
+    res.status(500).send("❌ 通知寄出失敗");
+  });
+});
+
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正在運行。請使用 POST /webhook 傳送 Shopify 客戶資料。");
 });
