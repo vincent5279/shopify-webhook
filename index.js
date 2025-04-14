@@ -17,7 +17,7 @@ const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: "takshing78@gmail.com",
-    pass: "" // 請放 App 密碼或使用環境變數
+    pass: "whfa ugtr frbg tujw" // 請放 App 密碼或使用環境變數
   }
 });
 
