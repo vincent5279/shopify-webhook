@@ -76,26 +76,31 @@ function hashAddresses(addresses) {
 
 // 📤 組成郵件內容
 function buildEmailBody(customer, action) {
-  let body = `📬 客戶地址${action}通知\n\n`;
-  body += `👤 姓名：${customer.first_name} ${customer.last_name}\n`;
-  body += `📧 電郵：${customer.email}\n`;
-  body += `☎️ 電話：${customer.phone || "未提供"}\n`;
-  body += `🏢 公司：${customer.company || "未提供"}\n`;
-  body += `🗓️ 建立時間：${customer.created_at || "未提供"}\n`;
+  const createdAt = customer.created_at
+    ? new Date(customer.created_at).toLocaleString("zh-HK", { timeZone: "Asia/Hong_Kong" })
+    : "未提供";
 
-  body += `\n🏠 地址列表：\n`;
+  let body = `📬 客戶地址${action}通知\n`;
+  body += `──────────────────\n`;
+  body += `👤 姓名      ：${customer.first_name} ${customer.last_name}\n`;
+  body += `📧 電郵      ：${customer.email}\n`;
+  body += `🗓️ 建立時間：${createdAt}（香港時間）\n`;
+  body += `──────────────────\n\n`;
 
   if (customer.addresses.length === 0) {
-    body += "（目前無任何地址）\n";
+    body += `🏠 地址列表：目前無任何地址\n`;
   } else {
+    body += `🏠 地址列表：共 ${customer.addresses.length} 筆\n`;
+
     customer.addresses.forEach((addr, i) => {
-      body += `\n【地址 ${i + 1}】\n`;
-      body += `地址一：${addr.address1}\n`;
-      body += `地址二：${addr.address2 || ""}\n`;
-      body += `城市：${addr.city}\n`;
-      body += `省份：${addr.province}\n`;
-      body += `國家：${addr.country}\n`;
-      body += `電話：${addr.phone || "未提供"}\n`;
+      body += `\n【地址 ${i + 1}】──────────────────\n`;
+      body += `🏢 公司    ：${addr.company || "未提供"}\n`;
+      body += `📍 地址一  ：${addr.address1}\n`;
+      body += `📍 地址二  ：${addr.address2 || "未提供"}\n`;
+      body += `🏙️ 城市    ：${addr.city}\n`;
+      body += `🏞️ 省份    ：${addr.province}\n`;
+      body += `🌍 國家    ：${addr.country}\n`;
+      body += `📞 電話    ：${addr.phone || "未提供"}\n`;
     });
   }
 
