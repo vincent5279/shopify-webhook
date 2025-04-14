@@ -1,4 +1,4 @@
-// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 完整預設地址處理）
+// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon + 即時寄信時間）
 // 功能：當客戶新增、修改、刪除地址、變更/加入/刪除預設地址時，自動寄送通知信
 
 const express = require("express");
@@ -18,7 +18,7 @@ const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.EMAIL_USER || "takshing78@gmail.com",
-    pass: process.env.EMAIL_PASS || "whfa ugtr frbg tujw"
+    pass: process.env.EMAIL_PASS || ""
   }
 });
 
@@ -97,17 +97,15 @@ function hashAddresses(addresses) {
 
 // 📤 組成郵件內容
 function buildEmailBody(customer, action) {
-  const createdAt = customer.created_at
-    ? DateTime.fromJSDate(new Date(customer.created_at))
-        .setZone("Asia/Hong_Kong")
-        .toFormat("yyyy/MM/dd HH:mm:ss")
-    : "未提供";
+  const createdAt = DateTime.now()
+    .setZone("Asia/Hong_Kong")
+    .toFormat("yyyy/MM/dd HH:mm:ss");
 
   let body = `📬 客戶地址${action}通知\n`;
   body += `──────────────────\n`;
   body += `👤 姓名      ：${customer.first_name} ${customer.last_name}\n`;
   body += `📧 電郵      ：${customer.email}\n`;
-  body += `🗓️ 建立時間：${createdAt}（香港時間）\n`;
+  body += `🗓️ 通知寄出時間：${createdAt}（香港時間）\n`;
   body += `──────────────────\n\n`;
 
   if (customer.addresses.length === 0) {
