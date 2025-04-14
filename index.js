@@ -9,9 +9,19 @@ const nodemailer = require("nodemailer");
 const app = express();
 app.use(express.json());
 
-// 最上面加
-const cors = require("cors");
-app.use(cors());
+// ✅ 最頂部引入 express 之後加入 CORS 中介層
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*"); // 你可以改成 Shopify 網址更安全
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+
+  // ✅ 特別處理預檢請求（fetch 預先發 OPTIONS）
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
 
 const customerStore = {}; // { [customerId]: { defaultHash, extraHash } }
 
