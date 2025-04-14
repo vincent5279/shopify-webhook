@@ -1,10 +1,11 @@
-// 📦 Shopify 客戶地址通知系統（繁體中文版本）
+// 📦 Shopify 客戶地址通知系統（繁體中文版本 + Luxon）
 // 功能：當客戶新增、修改、刪除地址或變更預設地址時，自動寄送通知信
 
 const express = require("express");
 const bodyParser = require("body-parser");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+const { DateTime } = require("luxon"); // 使用 luxon 處理時區
 
 const app = express();
 app.use(bodyParser.json());
@@ -16,8 +17,8 @@ const customerStore = {}; // { [customerId]: { addressCount, hash, updatedAt, de
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: "takshing78@gmail.com",
-    pass: "whfa ugtr frbg tujw" // 請放 App 密碼或使用環境變數
+    user: process.env.EMAIL_USER || "takshing78@gmail.com",
+    pass: process.env.EMAIL_PASS || "whfa ugtr frbg tujw"
   }
 });
 
@@ -57,8 +58,8 @@ app.post("/webhook", (req, res) => {
   const body = buildEmailBody(customer, action);
 
   transporter.sendMail({
-    from: "takshing78@gmail.com",
-    to: "takshing78@gmail.com",
+    from: process.env.EMAIL_USER || "takshing78@gmail.com",
+    to: process.env.EMAIL_USER || "takshing78@gmail.com",
     subject: `📢 客戶地址${action}`,
     text: body
   }, (err, info) => {
@@ -77,7 +78,9 @@ function hashAddresses(addresses) {
 // 📤 組成郵件內容
 function buildEmailBody(customer, action) {
   const createdAt = customer.created_at
-    ? new Date(customer.created_at).toLocaleString("zh-HK", { timeZone: "Asia/Hong_Kong" })
+    ? DateTime.fromISO(customer.created_at, { zone: "utc" })
+        .setZone("Asia/Hong_Kong")
+        .toFormat("yyyy/MM/dd HH:mm:ss")
     : "未提供";
 
   let body = `📬 客戶地址${action}通知\n`;
