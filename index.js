@@ -80,35 +80,37 @@ app.post("/webhook", (req, res) => {
   const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
   const extraHash = hashAddresses(extraAddresses);
 
-  const last = customerStore[id] || { defaultHash: "", extraHash: "" };
-
+  const isFirstTime = !customerStore[id];
   let action = null;
 
-  if (!last.defaultHash && defaultHash) {
-    action = "加入預設地址";
-  } else if (last.defaultHash && !defaultHash) {
-    action = "刪除預設地址";
-  } else if (last.defaultHash !== defaultHash) {
-    action = "變更預設地址";
-  } else if (!last.extraHash && extraHash) {
-    action = "新增地址";
-  } else if (last.extraHash && !extraHash) {
-    action = "刪除地址";
-  } else if (last.extraHash !== extraHash) {
-    action = "更新地址";
+  if (isFirstTime) {
+    // 第一次，不要判斷變更，只處理「是否有地址」
+    if (addresses.length > 0) {
+      action = "新增地址";
+    } else {
+      return res.send("✅ 第一次接收，無地址，略過");
+    }
   } else {
-    return res.send("✅ 無地址變更");
+    const last = customerStore[id];
+
+    if (!last.defaultHash && defaultHash) {
+      action = "加入預設地址";
+    } else if (last.defaultHash && !defaultHash) {
+      action = "刪除預設地址";
+    } else if (last.defaultHash !== defaultHash) {
+      action = "變更預設地址";
+    } else if (!last.extraHash && extraHash) {
+      action = "新增地址";
+    } else if (last.extraHash && !extraHash) {
+      action = "刪除地址";
+    } else if (last.extraHash !== extraHash) {
+      action = "更新地址";
+    } else {
+      return res.send("✅ 無地址變更");
+    }
   }
 
+  // 儲存目前狀態
   customerStore[id] = { defaultHash, extraHash };
   sendNotification(customer, action, res);
-});
-
-app.get("/", (req, res) => {
-  res.send("✅ Webhook 伺服器正在運行。請使用 POST /webhook 傳送 Shopify 客戶資料。");
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`📡 Webhook 啟動於 http://localhost:${PORT}`);
 });
