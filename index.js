@@ -48,13 +48,17 @@ function hashAddresses(addresses) {
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
 
-  const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+  // 若已存在並已送過註冊通知，不再通知（可依需要清除 customerStore[id].notified）
+  if (customerStore[id]?.notified) {
+    return res.send("✅ 該帳戶已註冊並通知過，略過");
+  }
 
-  const msg = `🆕 有新客戶登入或註冊帳號：
+  const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+  const msg = `🆕 有新客戶註冊帳號：
 
 👤 姓名：${first_name} ${last_name}
 📧 電郵：${email}
-🕒 時間：${time}（香港時間）`;
+🕒 註冊時間：${time}（香港時間）`;
 
   try {
     await sendNotification({
@@ -63,12 +67,22 @@ app.post("/webhook/new-customer", async (req, res) => {
       subject: "🆕 有新客戶註冊帳號",
       body: msg
     });
-    res.send("✅ 註冊通知已發送");
+
+    // 用戶註冊記錄中標記為已通知
+    customerStore[id] = {
+      ...(customerStore[id] || {}),
+      notified: true,
+      defaultHash: "",
+      extraHash: ""
+    };
+
+    res.send("✅ 公司已收到註冊通知");
   } catch (err) {
     console.error("❌ 註冊通知寄送失敗", err);
     res.status(500).send("❌ 寄送失敗");
   }
 });
+
 
 // 📡 地址變更 webhook（獨立邏輯）
 app.post("/webhook", async (req, res) => {
