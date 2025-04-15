@@ -1,4 +1,4 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 精準邏輯 + 每次註冊通知）
+// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址精準）
 
 const express = require("express");
 const crypto = require("crypto");
@@ -44,22 +44,17 @@ function hashAddresses(addresses) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// 🆕 客戶註冊通知（觸發於 /account 登入頁）
+// 🆕 每次登入或註冊通知（由 /account 頁面觸發）
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
 
-  // 若該用戶已存在，略過
-  if (customerStore[id]) {
-    return res.send("✅ 用戶已存在，略過註冊通知");
-  }
-
-  // 發送註冊通知給公司
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-  const msg = `🆕 有新客戶註冊帳號：
+
+  const msg = `🆕 有新客戶登入或註冊帳號：
 
 👤 姓名：${first_name} ${last_name}
 📧 電郵：${email}
-🕒 註冊時間：${time}（香港時間）`;
+🕒 時間：${time}（香港時間）`;
 
   try {
     await sendNotification({
@@ -68,18 +63,14 @@ app.post("/webhook/new-customer", async (req, res) => {
       subject: "🆕 有新客戶註冊帳號",
       body: msg
     });
-
-    // 標記該用戶已被處理
-    customerStore[id] = { defaultHash: "", extraHash: "" };
-
-    res.send("✅ 公司已收到註冊通知");
+    res.send("✅ 註冊通知已發送");
   } catch (err) {
     console.error("❌ 註冊通知寄送失敗", err);
     res.status(500).send("❌ 寄送失敗");
   }
 });
 
-// 📡 地址變更 webhook
+// 📡 地址變更 webhook（獨立邏輯）
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const id = customer.id.toString();
@@ -96,7 +87,6 @@ app.post("/webhook", async (req, res) => {
   const extraChanged = last.extraHash !== extraHash;
 
   let action = null;
-
   if (!last.defaultHash && defaultHash) action = "加入預設地址";
   else if (last.defaultHash && !defaultHash) action = "刪除預設地址";
   else if (defaultChanged) action = "變更預設地址";
