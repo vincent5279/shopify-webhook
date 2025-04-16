@@ -10,7 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const customerStore = {}; // { [customerId]: { notified, defaultHash, extraHash }, deleted_id: true }
+const customerStore = {}; // { [customerId: string]: { notified, defaultHash, extraHash }, deleted_id: true }
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -20,12 +20,10 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// ✉️ 統一寄信方法
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
   if (toAdmin) recipients.push(process.env.EMAIL_USER);
   if (toCustomer && customer?.email) recipients.push(customer.email);
-
   return transporter.sendMail({
     from: `"德成電業客服中心" <${process.env.EMAIL_USER}>`,
     to: recipients,
@@ -34,7 +32,6 @@ function sendNotification({ toAdmin = true, toCustomer = false, customer, subjec
   });
 }
 
-// 📦 地址 hash 計算
 function hashAddresses(addresses) {
   if (!addresses || addresses.length === 0) return "";
   const content = addresses
@@ -44,10 +41,16 @@ function hashAddresses(addresses) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// 🆕 客戶註冊通知（每次註冊都通知，避免初始地址通知）
+// 🆕 新客戶註冊通知
 app.post("/webhook/new-customer", async (req, res) => {
-  const { id, email, first_name, last_name } = req.body;
-  if (!id) return res.status(400).send("❌ 缺少 customer ID");
+  const { id, email, first_name, last_name, default_address, addresses } = req.body;
+  const customerId = id?.toString();
+  if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
+
+  const deletedKey = `deleted_${customerId}`;
+  if (customerStore[customerId] && !customerStore[deletedKey]) {
+    return res.send("✅ 此帳戶已存在且尚未刪除，略過");
+  }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `🆕 有新客戶註冊帳號：
@@ -64,14 +67,12 @@ app.post("/webhook/new-customer", async (req, res) => {
       body: msg
     });
 
-    // 初始只記錄 defaultHash 與 extraHash，避免後續「加入預設地址」誤報
-    customerStore[id] = {
+    customerStore[customerId] = {
       notified: true,
-      defaultHash: hashAddresses(req.body.default_address ? [req.body.default_address] : []),
-      extraHash: hashAddresses((req.body.addresses || []).filter(a => a.id !== req.body.default_address?.id))
+      defaultHash: hashAddresses(default_address ? [default_address] : []),
+      extraHash: hashAddresses((addresses || []).filter(a => a.id !== default_address?.id))
     };
-
-    delete customerStore[`deleted_${id}`];
+    delete customerStore[deletedKey];
     res.send("✅ 公司已收到註冊通知");
   } catch (err) {
     console.error("❌ 註冊通知寄送失敗", err);
@@ -79,11 +80,11 @@ app.post("/webhook/new-customer", async (req, res) => {
   }
 });
 
-// 📮 地址變更通知（真正有變動才發送）
+// 📮 地址變更通知（只通知實際有變更的情況）
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
-  const id = customer.id?.toString();
-  if (!id) return res.status(400).send("❌ 缺少 customer ID");
+  const customerId = customer.id?.toString();
+  if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
 
   const addresses = customer.addresses || [];
   const defaultAddress = customer.default_address || null;
@@ -92,11 +93,12 @@ app.post("/webhook", async (req, res) => {
   const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
   const extraHash = hashAddresses(extraAddresses);
 
-  const last = customerStore[id];
+  const last = customerStore[customerId];
 
   if (!last) {
-    customerStore[id] = { defaultHash, extraHash, notified: true };
-    return res.send("✅ 第一次地址記錄，不發通知");
+    // 初次觸發，記錄 hash，避免誤報
+    customerStore[customerId] = { defaultHash, extraHash, notified: true };
+    return res.send("✅ 首次登入，僅記錄地址 hash");
   }
 
   const defaultChanged = last.defaultHash !== defaultHash;
@@ -110,11 +112,11 @@ app.post("/webhook", async (req, res) => {
   else if (last.extraHash && !extraHash) action = "刪除地址";
   else if (extraChanged) action = "更新地址";
   else {
-    customerStore[id] = { ...last, defaultHash, extraHash };
+    customerStore[customerId] = { ...last, defaultHash, extraHash };
     return res.send("✅ 無地址變更");
   }
 
-  customerStore[id] = { ...last, defaultHash, extraHash };
+  customerStore[customerId] = { ...last, defaultHash, extraHash };
 
   const body = formatEmailBody(customer, action);
   try {
@@ -134,11 +136,12 @@ app.post("/webhook", async (req, res) => {
 // 🗑️ 刪除帳戶通知（只寄一次）
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
-  if (!id || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
+  const customerId = id?.toString();
+  if (!customerId || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
 
-  const deletedKey = `deleted_${id}`;
+  const deletedKey = `deleted_${customerId}`;
   if (customerStore[deletedKey]) {
-    return res.send("✅ 該帳戶已寄送過刪除通知");
+    return res.send("✅ 該帳戶已寄送刪除通知");
   }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
@@ -160,7 +163,7 @@ app.post("/delete-account", async (req, res) => {
       body: msg
     });
 
-    delete customerStore[id];
+    delete customerStore[customerId];
     customerStore[deletedKey] = true;
 
     res.send("✅ 已寄送刪除確認信給用戶");
@@ -170,7 +173,7 @@ app.post("/delete-account", async (req, res) => {
   }
 });
 
-// 📨 地址變更信件格式
+// 📨 地址信件格式
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
