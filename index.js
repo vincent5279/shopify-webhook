@@ -1,4 +1,4 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 單次刪除通知 + 收件姓名顯示）
+// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 單次刪除通知 + 中英文姓名顯示）
 
 const express = require("express");
 const crypto = require("crypto");
@@ -19,6 +19,12 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS || "whfa ugtr frbg tujw"
   }
 });
+
+// 🧠 顯示帳號姓名（中英文格式支援）
+function formatFullName(first, last) {
+  const isChinese = str => /[\u4e00-\u9fff]/.test(str);
+  return isChinese(first) || isChinese(last) ? `${last}${first}` : `${first} ${last}`;
+}
 
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
@@ -47,7 +53,7 @@ app.post("/webhook/new-customer", async (req, res) => {
   const customerId = id?.toString();
   if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
 
-  const displayName = name || `${first_name} ${last_name}`;
+  const displayName = name || formatFullName(first_name, last_name);
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `🆕 有新客戶註冊帳號：
@@ -78,7 +84,7 @@ app.post("/webhook/new-customer", async (req, res) => {
   }
 });
 
-// 📮 地址變更通知（只通知實際有變更的情況）
+// 📮 地址變更通知
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const customerId = customer.id?.toString();
@@ -130,7 +136,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🗑️ 刪除帳戶通知（只寄一次）
+// 🗑️ 刪除帳戶通知
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   const customerId = id?.toString();
@@ -142,7 +148,7 @@ app.post("/delete-account", async (req, res) => {
   }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-  const msg = `👋 ${first_name} ${last_name} 您好，
+  const msg = `👋 ${formatFullName(first_name, last_name)} 您好，
 
 您已成功刪除本公司網站帳戶。
 我們已於 ${time}（香港時間）清除與您相關的通知記錄與記憶。
@@ -175,7 +181,7 @@ function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
   body += `──────────────────\n`;
-  body += `👤 帳號姓名：${customer.name || `${customer.first_name} ${customer.last_name}`}\n`;
+  body += `👤 帳號姓名：${formatFullName(customer.first_name, customer.last_name)}\n`;
   body += `📧 電郵：${customer.email}\n`;
   body += `🗓️ 通知寄出時間：${createdAt}（香港時間）\n`;
   body += `──────────────────\n\n`;
