@@ -1,4 +1,4 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動偵測優化）
+// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 刪除帳號通知）
 
 const express = require("express");
 const crypto = require("crypto");
@@ -20,7 +20,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// ✉️ 寄送信件
+// ✉️ 統一寄信方法
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
   if (toAdmin) recipients.push(process.env.EMAIL_USER);
@@ -44,15 +44,14 @@ function hashAddresses(addresses) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// 🆕 註冊 webhook（重複也發，只發一次，帳號未刪除不再發）
+// 🆕 註冊通知（每次註冊都通知，只要帳戶不是現存未刪除）
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
-
   if (!id) return res.status(400).send("❌ 缺少 customer ID");
 
-  const existing = customerStore[id];
-  if (existing?.notified) {
-    return res.send("✅ 該帳戶已存在且通知過，略過");
+  const deletedKey = `deleted_${id}`;
+  if (customerStore[id] && !customerStore[deletedKey]) {
+    return res.send("✅ 此帳戶已存在且尚未刪除，略過");
   }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
@@ -70,16 +69,17 @@ app.post("/webhook/new-customer", async (req, res) => {
       body: msg
     });
 
-    customerStore[id] = { ...existing, notified: true }; // ✅ 標記已通知（不刪除的話不再通知）
+    customerStore[id] = { notified: true, defaultHash: "", extraHash: "" };
+    delete customerStore[deletedKey];
 
-    res.send("✅ 註冊通知已發送");
+    res.send("✅ 公司已收到註冊通知");
   } catch (err) {
     console.error("❌ 註冊通知寄送失敗", err);
-    res.status(500).send("❌ 註冊通知失敗");
+    res.status(500).send("❌ 寄送失敗");
   }
 });
 
-// 📮 地址 webhook（只在有實際變動時發送）
+// 📮 地址變更通知（只有變更才發送）
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const id = customer.id?.toString();
@@ -125,7 +125,46 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 📨 地址變更內容格式
+// 🗑️ 刪除帳戶：只寄一次信給用戶本人
+app.post("/delete-account", async (req, res) => {
+  const { id, email, first_name, last_name } = req.body;
+  if (!id || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
+
+  const deletedKey = `deleted_${id}`;
+  if (customerStore[deletedKey]) {
+    return res.send("✅ 該帳戶已處理過刪除確認信");
+  }
+
+  const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+  const body = `👋 ${first_name} ${last_name} 您好，
+
+您已成功刪除 Shopify 帳戶。
+我們已於 ${time}（香港時間）清除與您相關的通知記錄與記憶。
+
+🧠 所有資料已永久移除，若您重新註冊，我們將視為全新帳號。
+
+謝謝您曾使用我們的服務 🙏`;
+
+  try {
+    await sendNotification({
+      toAdmin: false,
+      toCustomer: true,
+      customer: { email },
+      subject: "✅ 您的帳戶已成功刪除",
+      body
+    });
+
+    delete customerStore[id];
+    customerStore[deletedKey] = true;
+
+    res.send("✅ 已寄送刪除確認信給用戶");
+  } catch (err) {
+    console.error("❌ 刪除信寄送失敗", err);
+    res.status(500).send("❌ 發送刪除確認信失敗");
+  }
+});
+
+// 📧 地址格式組件
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
@@ -155,6 +194,7 @@ function formatEmailBody(customer, action) {
   return body;
 }
 
+// 🧪 健康檢查
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正常運行");
 });
