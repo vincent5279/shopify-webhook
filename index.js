@@ -95,7 +95,6 @@ app.post("/webhook", async (req, res) => {
   const last = customerStore[id];
 
   if (!last) {
-    // 忽略首次觸發，避免誤報加入地址
     customerStore[id] = { defaultHash, extraHash, notified: true };
     return res.send("✅ 第一次地址記錄，不發通知");
   }
