@@ -79,7 +79,6 @@ app.post("/webhook/new-customer", async (req, res) => {
   }
 });
 
-// 📮 地址變更通知（只有變更才發送）
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const id = customer.id?.toString();
@@ -92,7 +91,14 @@ app.post("/webhook", async (req, res) => {
   const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
   const extraHash = hashAddresses(extraAddresses);
 
-  const last = customerStore[id] || {};
+  const last = customerStore[id];
+
+  // ✅ 如果是首次呼叫 webhook，先記錄地址 hash，但不寄信
+  if (!last) {
+    customerStore[id] = { defaultHash, extraHash, notified: true };
+    return res.send("✅ 第一次登入紀錄地址，未發送通知");
+  }
+
   const defaultChanged = last.defaultHash !== defaultHash;
   const extraChanged = last.extraHash !== extraHash;
 
