@@ -1,4 +1,5 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 單次刪除通知）
+// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 單次刪除通知 + 防連發）
+
 const express = require("express");
 const crypto = require("crypto");
 const { DateTime } = require("luxon");
@@ -9,8 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const customerStore = {}; // { [customerId]: { notified, defaultHash, extraHash }, deleted_123: true }
-const deleteTimestamps = {}; // 防止短時間內重複觸發
+const customerStore = {}; // { [id]: { notified, defaultHash, extraHash, deletedAt }, deleted_id: true }
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -20,10 +20,12 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// ✉️ 統一寄信方法
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
   if (toAdmin) recipients.push(process.env.EMAIL_USER);
   if (toCustomer && customer?.email) recipients.push(customer.email);
+
   return transporter.sendMail({
     from: `"德成電業客服中心" <${process.env.EMAIL_USER}>`,
     to: recipients,
@@ -32,6 +34,7 @@ function sendNotification({ toAdmin = true, toCustomer = false, customer, subjec
   });
 }
 
+// 📦 地址 hash 計算
 function hashAddresses(addresses) {
   if (!addresses || addresses.length === 0) return "";
   const content = addresses
@@ -41,7 +44,7 @@ function hashAddresses(addresses) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// 🆕 註冊
+// 🆕 客戶註冊通知
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   if (!id) return res.status(400).send("❌ 缺少 customer ID");
@@ -65,8 +68,10 @@ app.post("/webhook/new-customer", async (req, res) => {
       subject: "🆕 有新客戶註冊帳號",
       body: msg
     });
+
     customerStore[id] = { notified: true, defaultHash: "", extraHash: "" };
     delete customerStore[deletedKey];
+
     res.send("✅ 公司已收到註冊通知");
   } catch (err) {
     console.error("❌ 註冊通知寄送失敗", err);
@@ -74,7 +79,7 @@ app.post("/webhook/new-customer", async (req, res) => {
   }
 });
 
-// 📦 地址 webhook
+// 📮 地址變更通知
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const id = customer.id?.toString();
@@ -83,10 +88,12 @@ app.post("/webhook", async (req, res) => {
   const addresses = customer.addresses || [];
   const defaultAddress = customer.default_address || null;
   const extraAddresses = addresses.filter(a => a.id !== defaultAddress?.id);
+
   const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
   const extraHash = hashAddresses(extraAddresses);
 
   const last = customerStore[id];
+
   if (!last) {
     customerStore[id] = { defaultHash, extraHash, notified: true };
     return res.send("✅ 第一次登入紀錄地址，未發送通知");
@@ -124,17 +131,17 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🗑️ 刪除帳號
+// 🗑️ 刪除帳戶通知（只寄一次，加入時間戳避免重發）
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   if (!id || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
 
   const deletedKey = `deleted_${id}`;
   const now = Date.now();
-  const lastSent = deleteTimestamps[id];
+  const lastDeleted = customerStore[id]?.deletedAt || 0;
 
-  if (customerStore[deletedKey] || (lastSent && now - lastSent < 30000)) {
-    return res.send("✅ 已處理過刪除通知，略過");
+  if (now - lastDeleted < 60000) {
+    return res.send("✅ 最近已寄送過刪除信，略過");
   }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
@@ -155,18 +162,19 @@ app.post("/delete-account", async (req, res) => {
       subject: "✅ 您的帳戶已成功刪除",
       body: msg
     });
+
     delete customerStore[id];
     customerStore[deletedKey] = true;
-    deleteTimestamps[id] = now;
+    customerStore[id] = { deletedAt: now }; // 紀錄刪除時間（防止短時間重複）
 
-    res.send("✅ 刪除確認信已寄送給用戶");
+    res.send("✅ 已寄送刪除確認信給用戶");
   } catch (err) {
     console.error("❌ 刪除信寄送失敗", err);
     res.status(500).send("❌ 發送刪除確認信失敗");
   }
 });
 
-// 📧 地址格式
+// 📧 地址格式信件
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
@@ -196,7 +204,7 @@ function formatEmailBody(customer, action) {
   return body;
 }
 
-// ✅ 健康檢查
+// 🧪 健康檢查
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正常運行");
 });
