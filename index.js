@@ -10,7 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const customerStore = {}; // { [customerId: string]: { notified, defaultHash, extraHash }, deleted_id: true }
+const customerStore = {}; // { [customerId]: { notified, defaultHash, extraHash }, deleted_id: true }
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -20,6 +20,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// ✉️ 寄送通知
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
   if (toAdmin) recipients.push(process.env.EMAIL_USER);
@@ -32,6 +33,7 @@ function sendNotification({ toAdmin = true, toCustomer = false, customer, subjec
   });
 }
 
+// 📦 Hash 地址陣列
 function hashAddresses(addresses) {
   if (!addresses || addresses.length === 0) return "";
   const content = addresses
@@ -43,14 +45,16 @@ function hashAddresses(addresses) {
 
 // 🆕 新客戶註冊通知
 app.post("/webhook/new-customer", async (req, res) => {
-  const { id, email, first_name, last_name, default_address, addresses } = req.body;
+  const { id, email, first_name, last_name, name, default_address, addresses } = req.body;
   const customerId = id?.toString();
   if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
+
+  const displayName = name || `${first_name} ${last_name}`;
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `🆕 有新客戶註冊帳號：
 
-👤 姓名：${first_name} ${last_name}
+👤 姓名：${displayName}
 📧 電郵：${email}
 🕒 註冊時間：${time}（香港時間）`;
 
@@ -76,7 +80,7 @@ app.post("/webhook/new-customer", async (req, res) => {
   }
 });
 
-// 📮 地址變更通知（只通知實際有變更的情況）
+// 📮 地址變更通知（真正變動才寄）
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const customerId = customer.id?.toString();
@@ -92,7 +96,7 @@ app.post("/webhook", async (req, res) => {
   const last = customerStore[customerId];
 
   if (!last) {
-    // 初次觸發，記錄 hash，避免誤報
+    // 首次觸發只紀錄 hash
     customerStore[customerId] = { defaultHash, extraHash, notified: true };
     return res.send("✅ 首次登入，僅記錄地址 hash");
   }
@@ -169,7 +173,7 @@ app.post("/delete-account", async (req, res) => {
   }
 });
 
-// 📨 地址信件格式
+// 📧 地址變更信件格式
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
