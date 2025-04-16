@@ -20,12 +20,39 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// 🧠 顯示帳號姓名（中英文格式支援）
+// 🧠 顯示中英文姓名
 function formatFullName(first, last) {
   const isChinese = str => /[\u4e00-\u9fff]/.test(str);
+  if (!first && !last) return "";
   return isChinese(first) || isChinese(last) ? `${last}${first}` : `${first} ${last}`;
 }
 
+// ✅ 對地址欄位所有欄位做 hash
+function hashAddressFields(address) {
+  if (!address) return "";
+  const fields = [
+    address.first_name,
+    address.last_name,
+    address.name,
+    address.company,
+    address.address1,
+    address.address2,
+    address.city,
+    address.province,
+    address.zip,
+    address.country,
+    address.phone
+  ];
+  return crypto.createHash("sha256").update(fields.join("|").toLowerCase()).digest("hex");
+}
+
+function hashAddresses(addresses) {
+  if (!addresses || addresses.length === 0) return "";
+  const content = addresses.map(hashAddressFields).join("|");
+  return crypto.createHash("sha256").update(content).digest("hex");
+}
+
+// ✉️ 寄信
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
   if (toAdmin) recipients.push(process.env.EMAIL_USER);
@@ -38,15 +65,6 @@ function sendNotification({ toAdmin = true, toCustomer = false, customer, subjec
   });
 }
 
-function hashAddresses(addresses) {
-  if (!addresses || addresses.length === 0) return "";
-  const content = addresses
-    .map(a => `${a.address1}-${a.address2}-${a.city}-${a.province}-${a.zip}-${a.country}`)
-    .join("|")
-    .toLowerCase();
-  return crypto.createHash("sha256").update(content).digest("hex");
-}
-
 // 🆕 新客戶註冊通知
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name, name, default_address, addresses } = req.body;
@@ -54,8 +72,8 @@ app.post("/webhook/new-customer", async (req, res) => {
   if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
 
   const displayName = name || formatFullName(first_name, last_name);
-
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+
   const msg = `🆕 有新客戶註冊帳號：
 
 👤 帳號姓名：${displayName}
@@ -176,12 +194,14 @@ app.post("/delete-account", async (req, res) => {
   }
 });
 
-// 📧 地址變更信件格式
+// 📧 電郵內容格式化
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+  const accountName = customer.name || formatFullName(customer.first_name, customer.last_name);
+
   let body = `📬 客戶地址${action}通知\n`;
   body += `──────────────────\n`;
-  body += `👤 帳號姓名：${formatFullName(customer.first_name, customer.last_name)}\n`;
+  body += `👤 帳號姓名：${accountName}\n`;
   body += `📧 電郵：${customer.email}\n`;
   body += `🗓️ 通知寄出時間：${createdAt}（香港時間）\n`;
   body += `──────────────────\n\n`;
@@ -192,8 +212,9 @@ function formatEmailBody(customer, action) {
   } else {
     body += `🏠 地址列表：共 ${addresses.length} 筆\n`;
     addresses.forEach((addr, i) => {
+      const contactName = formatFullName(addr.first_name || "", addr.last_name || "") || addr.name || "未提供";
       body += `\n【地址 ${i + 1}】──────────────────\n`;
-      body += `👤 收件聯繫人姓名：${addr.name || "未提供"}\n`;
+      body += `👤 收件聯繫人姓名：${contactName}\n`;
       body += `🏢 公司：${addr.company || "未提供"}\n`;
       body += `📍 地址一：${addr.address1 || "未提供"}\n`;
       body += `📍 地址二：${addr.address2 || "未提供"}\n`;
