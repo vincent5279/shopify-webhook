@@ -47,11 +47,6 @@ app.post("/webhook/new-customer", async (req, res) => {
   const customerId = id?.toString();
   if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
 
-  const deletedKey = `deleted_${customerId}`;
-  if (customerStore[customerId] && !customerStore[deletedKey]) {
-    return res.send("✅ 此帳戶已存在且尚未刪除，略過");
-  }
-
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `🆕 有新客戶註冊帳號：
 
@@ -72,7 +67,8 @@ app.post("/webhook/new-customer", async (req, res) => {
       defaultHash: hashAddresses(default_address ? [default_address] : []),
       extraHash: hashAddresses((addresses || []).filter(a => a.id !== default_address?.id))
     };
-    delete customerStore[deletedKey];
+
+    delete customerStore[`deleted_${customerId}`];
     res.send("✅ 公司已收到註冊通知");
   } catch (err) {
     console.error("❌ 註冊通知寄送失敗", err);
