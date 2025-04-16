@@ -48,6 +48,10 @@ function hashAddresses(addresses) {
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
 
+  if (customerStore[id]) {
+    return res.send("✅ 該帳戶已存在，略過註冊通知");
+  }
+
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `🆕 有新客戶註冊帳號：
 
@@ -62,6 +66,9 @@ app.post("/webhook/new-customer", async (req, res) => {
       subject: "🆕 有新客戶註冊帳號",
       body: msg
     });
+
+    // ✅ 註冊後記錄帳號（防止重複觸發）
+    customerStore[id] = { defaultHash: "", extraHash: "" };
 
     res.send("✅ 公司已收到註冊通知");
   } catch (err) {
