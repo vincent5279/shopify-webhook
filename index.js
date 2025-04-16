@@ -1,4 +1,4 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址精準）
+// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址精準 + 單次通知機制）
 
 const express = require("express");
 const crypto = require("crypto");
@@ -10,7 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const customerStore = {}; // { [customerId]: { defaultHash, extraHash } }
+const customerStore = {}; // { [customerId]: { defaultHash, extraHash, lastNotified } }
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -44,12 +44,18 @@ function hashAddresses(addresses) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// 🆕 每次註冊通知（無論是否重複）
+// 🆕 每次註冊通知（無論是否重複註冊，但避免連續重送）
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
+  const customerId = id?.toString();
+  if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
 
-  if (customerStore[id]) {
-    return res.send("✅ 該帳戶已存在，略過註冊通知");
+  const now = Date.now();
+  const lastNotified = customerStore[customerId]?.registerNotified || 0;
+
+  // 如果距離上次通知少於 30 秒，不再重複寄送（防止短時間重複註冊）
+  if (now - lastNotified < 30000) {
+    return res.send("✅ 已於短時間內通知過，略過");
   }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
@@ -67,8 +73,13 @@ app.post("/webhook/new-customer", async (req, res) => {
       body: msg
     });
 
-    // ✅ 註冊後記錄帳號（防止重複觸發）
-    customerStore[id] = { defaultHash: "", extraHash: "" };
+    // 更新狀態
+    customerStore[customerId] = {
+      ...(customerStore[customerId] || {}),
+      registerNotified: now,
+      defaultHash: "",
+      extraHash: ""
+    };
 
     res.send("✅ 公司已收到註冊通知");
   } catch (err) {
@@ -77,7 +88,7 @@ app.post("/webhook/new-customer", async (req, res) => {
   }
 });
 
-// 📡 地址變更 webhook（獨立邏輯）
+// 📡 地址變更 webhook
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const id = customer.id.toString();
@@ -101,11 +112,15 @@ app.post("/webhook", async (req, res) => {
   else if (last.extraHash && !extraHash) action = "刪除地址";
   else if (extraChanged) action = "更新地址";
   else {
-    customerStore[id] = { defaultHash, extraHash };
+    customerStore[id] = { ...last, defaultHash, extraHash };
     return res.send("✅ 無地址變更");
   }
 
-  customerStore[id] = { defaultHash, extraHash };
+  customerStore[id] = {
+    ...(customerStore[id] || {}),
+    defaultHash,
+    extraHash
+  };
 
   const body = formatEmailBody(customer, action);
   try {
