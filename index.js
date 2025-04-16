@@ -135,14 +135,18 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🗑️ 刪除帳戶通知（每帳號只寄一次給用戶）
+// 🗑️ 刪除帳戶通知（只寄一次給用戶）
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   if (!id || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
 
   const deletedKey = `deleted_${id}`;
-  if (customerStore[deletedKey]) {
-    return res.send("✅ 該帳戶已寄送刪除通知，略過");
+  const now = Date.now();
+  const lastDeleted = customerStore[deletedKey];
+
+  // ⏱️ 若已寄送且時間少於 60 秒內，不再重寄
+  if (lastDeleted && now - lastDeleted < 60000) {
+    return res.send("✅ 該帳戶已寄送刪除通知（時間過近），略過");
   }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
@@ -165,7 +169,7 @@ app.post("/delete-account", async (req, res) => {
     });
 
     delete customerStore[id];
-    customerStore[deletedKey] = true;
+    customerStore[deletedKey] = now; // 記錄寄送時間戳
 
     res.send("✅ 已寄送刪除確認信給用戶");
   } catch (err) {
