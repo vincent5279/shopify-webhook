@@ -1,4 +1,4 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址精準 + 單次通知機制）
+// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動偵測優化）
 
 const express = require("express");
 const crypto = require("crypto");
@@ -10,7 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const customerStore = {}; // { [customerId]: { defaultHash, extraHash, lastNotified } }
+const customerStore = {}; // { [customerId]: { notified: true, defaultHash, extraHash } }
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -20,7 +20,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// ✉️ 統一寄信方法
+// ✉️ 寄送信件
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
   if (toAdmin) recipients.push(process.env.EMAIL_USER);
@@ -44,18 +44,15 @@ function hashAddresses(addresses) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// 🆕 每次註冊通知（無論是否重複註冊，但避免連續重送）
+// 🆕 註冊 webhook（重複也發，只發一次，帳號未刪除不再發）
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
-  const customerId = id?.toString();
-  if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
 
-  const now = Date.now();
-  const lastNotified = customerStore[customerId]?.registerNotified || 0;
+  if (!id) return res.status(400).send("❌ 缺少 customer ID");
 
-  // 如果距離上次通知少於 30 秒，不再重複寄送（防止短時間重複註冊）
-  if (now - lastNotified < 30000) {
-    return res.send("✅ 已於短時間內通知過，略過");
+  const existing = customerStore[id];
+  if (existing?.notified) {
+    return res.send("✅ 該帳戶已存在且通知過，略過");
   }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
@@ -73,25 +70,20 @@ app.post("/webhook/new-customer", async (req, res) => {
       body: msg
     });
 
-    // 更新狀態
-    customerStore[customerId] = {
-      ...(customerStore[customerId] || {}),
-      registerNotified: now,
-      defaultHash: "",
-      extraHash: ""
-    };
+    customerStore[id] = { ...existing, notified: true }; // ✅ 標記已通知（不刪除的話不再通知）
 
-    res.send("✅ 公司已收到註冊通知");
+    res.send("✅ 註冊通知已發送");
   } catch (err) {
     console.error("❌ 註冊通知寄送失敗", err);
-    res.status(500).send("❌ 寄送失敗");
+    res.status(500).send("❌ 註冊通知失敗");
   }
 });
 
-// 📡 地址變更 webhook
+// 📮 地址 webhook（只在有實際變動時發送）
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
-  const id = customer.id.toString();
+  const id = customer.id?.toString();
+  if (!id) return res.status(400).send("❌ 缺少 customer ID");
 
   const addresses = customer.addresses || [];
   const defaultAddress = customer.default_address || null;
@@ -100,7 +92,7 @@ app.post("/webhook", async (req, res) => {
   const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
   const extraHash = hashAddresses(extraAddresses);
 
-  const last = customerStore[id] || { defaultHash: "", extraHash: "" };
+  const last = customerStore[id] || {};
   const defaultChanged = last.defaultHash !== defaultHash;
   const extraChanged = last.extraHash !== extraHash;
 
@@ -116,11 +108,7 @@ app.post("/webhook", async (req, res) => {
     return res.send("✅ 無地址變更");
   }
 
-  customerStore[id] = {
-    ...(customerStore[id] || {}),
-    defaultHash,
-    extraHash
-  };
+  customerStore[id] = { ...last, defaultHash, extraHash };
 
   const body = formatEmailBody(customer, action);
   try {
@@ -137,7 +125,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 📨 組成信件內容
+// 📨 地址變更內容格式
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
@@ -155,14 +143,15 @@ function formatEmailBody(customer, action) {
     addresses.forEach((addr, i) => {
       body += `\n【地址 ${i + 1}】──────────────────\n`;
       body += `🏢 公司：${addr.company || "未提供"}\n`;
-      body += `📍 地址一：${addr.address1}\n`;
+      body += `📍 地址一：${addr.address1 || "未提供"}\n`;
       body += `📍 地址二：${addr.address2 || "未提供"}\n`;
-      body += `🏙️ 城市：${addr.city}\n`;
-      body += `🏞️ 省份：${addr.province}\n`;
-      body += `🌍 國家：${addr.country}\n`;
+      body += `🏙️ 城市：${addr.city || "未提供"}\n`;
+      body += `🏞️ 省份：${addr.province || "未提供"}\n`;
+      body += `🌍 國家：${addr.country || "未提供"}\n`;
       body += `📞 電話：${addr.phone || "未提供"}\n`;
     });
   }
+
   return body;
 }
 
