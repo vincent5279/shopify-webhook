@@ -145,7 +145,7 @@ app.post("/delete-account", async (req, res) => {
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `👋 ${first_name} ${last_name} 您好，
 
-您已成功刪除 Shopify 帳戶。
+您已成功刪除本公司網站帳戶。
 我們已於 ${time}（香港時間）清除與您相關的通知記錄與記憶。
 
 🧠 所有資料已永久移除，若您重新註冊，我們將視為全新帳號。
