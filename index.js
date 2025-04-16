@@ -44,15 +44,10 @@ function hashAddresses(addresses) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// 🆕 客戶註冊通知
+// 🆕 客戶註冊通知（每次註冊都通知，避免初始地址通知）
 app.post("/webhook/new-customer", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   if (!id) return res.status(400).send("❌ 缺少 customer ID");
-
-  const deletedKey = `deleted_${id}`;
-  if (customerStore[id] && !customerStore[deletedKey]) {
-    return res.send("✅ 此帳戶已存在且尚未刪除，略過");
-  }
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `🆕 有新客戶註冊帳號：
@@ -69,9 +64,14 @@ app.post("/webhook/new-customer", async (req, res) => {
       body: msg
     });
 
-    customerStore[id] = { notified: true, defaultHash: "", extraHash: "" };
-    delete customerStore[deletedKey];
+    // 初始只記錄 defaultHash 與 extraHash，避免後續「加入預設地址」誤報
+    customerStore[id] = {
+      notified: true,
+      defaultHash: hashAddresses(req.body.default_address ? [req.body.default_address] : []),
+      extraHash: hashAddresses((req.body.addresses || []).filter(a => a.id !== req.body.default_address?.id))
+    };
 
+    delete customerStore[`deleted_${id}`];
     res.send("✅ 公司已收到註冊通知");
   } catch (err) {
     console.error("❌ 註冊通知寄送失敗", err);
@@ -79,7 +79,7 @@ app.post("/webhook/new-customer", async (req, res) => {
   }
 });
 
-// 📮 地址變更通知
+// 📮 地址變更通知（真正有變動才發送）
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const id = customer.id?.toString();
@@ -95,8 +95,9 @@ app.post("/webhook", async (req, res) => {
   const last = customerStore[id];
 
   if (!last) {
+    // 忽略首次觸發，避免誤報加入地址
     customerStore[id] = { defaultHash, extraHash, notified: true };
-    return res.send("✅ 第一次登入紀錄地址，未發送通知");
+    return res.send("✅ 第一次地址記錄，不發通知");
   }
 
   const defaultChanged = last.defaultHash !== defaultHash;
@@ -131,17 +132,15 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🗑️ 刪除帳戶通知（防重複發送）
+// 🗑️ 刪除帳戶通知（只寄一次）
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   if (!id || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
 
   const deletedKey = `deleted_${id}`;
   if (customerStore[deletedKey]) {
-    return res.send("✅ 該帳戶已寄送刪除通知，略過");
+    return res.send("✅ 該帳戶已寄送過刪除通知");
   }
-
-  customerStore[deletedKey] = Date.now(); // 防止重複觸發（即使連續點三次）
 
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `👋 ${first_name} ${last_name} 您好，
@@ -163,6 +162,7 @@ app.post("/delete-account", async (req, res) => {
     });
 
     delete customerStore[id];
+    customerStore[deletedKey] = true;
 
     res.send("✅ 已寄送刪除確認信給用戶");
   } catch (err) {
@@ -171,7 +171,7 @@ app.post("/delete-account", async (req, res) => {
   }
 });
 
-// 📧 地址變更信件格式
+// 📨 地址變更信件格式
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
@@ -201,6 +201,7 @@ function formatEmailBody(customer, action) {
   return body;
 }
 
+// ✅ 健康檢查
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正常運行");
 });
