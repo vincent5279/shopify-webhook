@@ -50,7 +50,10 @@ app.post("/webhook/new-customer", async (req, res) => {
   if (!id) return res.status(400).send("❌ 缺少 customer ID");
 
   const deletedKey = `deleted_${id}`;
-  if (customerStore[id] && !customerStore[deletedKey]) {
+  const isDeleted = customerStore[deletedKey] === true;
+
+  // ✅ 無論是否重複註冊，只要曾刪除就重新通知
+  if (customerStore[id] && !isDeleted) {
     return res.send("✅ 此帳戶已存在且尚未刪除，略過");
   }
 
@@ -70,7 +73,7 @@ app.post("/webhook/new-customer", async (req, res) => {
     });
 
     customerStore[id] = { notified: true, defaultHash: "", extraHash: "" };
-    delete customerStore[deletedKey]; // 如果曾經被刪除，現在恢復為新帳戶
+    delete customerStore[deletedKey]; // 清除舊刪除標記
 
     res.send("✅ 公司已收到註冊通知");
   } catch (err) {
@@ -94,7 +97,7 @@ app.post("/webhook", async (req, res) => {
 
   const last = customerStore[id];
 
-  // 若首次傳入地址，記錄 hash 不通知
+  // ✅ 如果首次登入，記錄但不通知
   if (!last) {
     customerStore[id] = { defaultHash, extraHash, notified: true };
     return res.send("✅ 第一次登入紀錄地址，未發送通知");
@@ -132,7 +135,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🗑️ 刪除帳戶通知（只寄一次給用戶）
+// 🗑️ 刪除帳戶通知（每帳號只寄一次給用戶）
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   if (!id || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
