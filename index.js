@@ -1,4 +1,4 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 單次刪除通知）
+// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 單次刪除通知 + 收件姓名顯示）
 
 const express = require("express");
 const crypto = require("crypto");
@@ -20,7 +20,6 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// ✉️ 寄送通知
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
   if (toAdmin) recipients.push(process.env.EMAIL_USER);
@@ -33,7 +32,6 @@ function sendNotification({ toAdmin = true, toCustomer = false, customer, subjec
   });
 }
 
-// 📦 Hash 地址陣列
 function hashAddresses(addresses) {
   if (!addresses || addresses.length === 0) return "";
   const content = addresses
@@ -54,7 +52,7 @@ app.post("/webhook/new-customer", async (req, res) => {
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const msg = `🆕 有新客戶註冊帳號：
 
-👤 姓名：${displayName}
+👤 帳號姓名：${displayName}
 📧 電郵：${email}
 🕒 註冊時間：${time}（香港時間）`;
 
@@ -80,7 +78,7 @@ app.post("/webhook/new-customer", async (req, res) => {
   }
 });
 
-// 📮 地址變更通知（真正變動才寄）
+// 📮 地址變更通知（只通知實際有變更的情況）
 app.post("/webhook", async (req, res) => {
   const customer = req.body;
   const customerId = customer.id?.toString();
@@ -96,7 +94,6 @@ app.post("/webhook", async (req, res) => {
   const last = customerStore[customerId];
 
   if (!last) {
-    // 首次觸發只紀錄 hash
     customerStore[customerId] = { defaultHash, extraHash, notified: true };
     return res.send("✅ 首次登入，僅記錄地址 hash");
   }
@@ -178,7 +175,7 @@ function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   let body = `📬 客戶地址${action}通知\n`;
   body += `──────────────────\n`;
-  body += `👤 姓名：${customer.first_name} ${customer.last_name}\n`;
+  body += `👤 帳號姓名：${customer.name || `${customer.first_name} ${customer.last_name}`}\n`;
   body += `📧 電郵：${customer.email}\n`;
   body += `🗓️ 通知寄出時間：${createdAt}（香港時間）\n`;
   body += `──────────────────\n\n`;
@@ -190,6 +187,7 @@ function formatEmailBody(customer, action) {
     body += `🏠 地址列表：共 ${addresses.length} 筆\n`;
     addresses.forEach((addr, i) => {
       body += `\n【地址 ${i + 1}】──────────────────\n`;
+      body += `👤 收件聯繫人姓名：${addr.name || "未提供"}\n`;
       body += `🏢 公司：${addr.company || "未提供"}\n`;
       body += `📍 地址一：${addr.address1 || "未提供"}\n`;
       body += `📍 地址二：${addr.address2 || "未提供"}\n`;
@@ -203,7 +201,6 @@ function formatEmailBody(customer, action) {
   return body;
 }
 
-// ✅ 健康檢查
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正常運行");
 });
