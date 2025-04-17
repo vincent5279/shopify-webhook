@@ -27,7 +27,7 @@ function formatFullName(first, last) {
   return isChinese(first) || isChinese(last) ? `${last}${first}` : `${first} ${last}`;
 }
 
-// ✅ 對地址欄位所有欄位做 hash
+// ✅ 對單筆地址所有欄位做 hash
 function hashAddressFields(address) {
   if (!address) return "";
   const fields = [
@@ -46,13 +46,14 @@ function hashAddressFields(address) {
   return crypto.createHash("sha256").update(fields.join("|").toLowerCase()).digest("hex");
 }
 
+// ✅ 對所有地址加總 hash（比較用）
 function hashAddresses(addresses) {
   if (!addresses || addresses.length === 0) return "";
   const content = addresses.map(hashAddressFields).join("|");
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// ✉️ 寄信
+// ✉️ 統一寄信函式
 function sendNotification({ toAdmin = true, toCustomer = false, customer, subject, body }) {
   const recipients = [];
   if (toAdmin) recipients.push(process.env.EMAIL_USER);
@@ -194,7 +195,7 @@ app.post("/delete-account", async (req, res) => {
   }
 });
 
-// 📧 電郵內容格式化
+// 📧 電郵內容格式
 function formatEmailBody(customer, action) {
   const createdAt = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
   const accountName = customer.name || formatFullName(customer.first_name, customer.last_name);
@@ -228,6 +229,7 @@ function formatEmailBody(customer, action) {
   return body;
 }
 
+// ✅ 健康檢查
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正常運行");
 });
