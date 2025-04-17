@@ -1,0 +1,8 @@
+# ⛔ 不要上傳敏感資料與資料庫
+.env
+customer_store.db
+
+# ⛔ 忽略 Node.js 套件與暫存資料
+node_modules/
+npm-debug.log
+.DS_Store
