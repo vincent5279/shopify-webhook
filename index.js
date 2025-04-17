@@ -1,16 +1,44 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 單次刪除通知 + 中英文姓名顯示）
+// 📦 Shopify 客戶通知系統（繁體中文 + 每次註冊通知 + 地址變動通知 + 單次刪除通知 + 中英文姓名顯示 + SQLite 持久化）
 
 const express = require("express");
 const crypto = require("crypto");
 const { DateTime } = require("luxon");
 const nodemailer = require("nodemailer");
 const cors = require("cors");
+const Database = require("better-sqlite3");
+
+// ✅ 初始化 SQLite
+const db = new Database("customer_store.db");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
+    defaultHash TEXT,
+    extraHash TEXT,
+    notified INTEGER DEFAULT 1
+  );
+`);
+function getCustomer(id) {
+  return db.prepare("SELECT * FROM customers WHERE id = ?").get(id);
+}
+function setCustomer(id, defaultHash, extraHash, notified = 1) {
+  db.prepare(`
+    INSERT INTO customers (id, defaultHash, extraHash, notified)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      defaultHash = excluded.defaultHash,
+      extraHash = excluded.extraHash,
+      notified = excluded.notified
+  `).run(id, defaultHash, extraHash, notified);
+}
+function deleteCustomer(id) {
+  db.prepare("DELETE FROM customers WHERE id = ?").run(id);
+}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const customerStore = {}; // { [customerId]: { notified, defaultHash, extraHash }, deleted_id: true }
+const customerStore = {}; // 僅用來記錄刪除狀態
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -89,11 +117,9 @@ app.post("/webhook/new-customer", async (req, res) => {
       body: msg
     });
 
-    customerStore[customerId] = {
-      notified: true,
-      defaultHash: hashAddresses(default_address ? [default_address] : []),
-      extraHash: hashAddresses((addresses || []).filter(a => a.id !== default_address?.id))
-    };
+    const defaultHash = hashAddresses(default_address ? [default_address] : []);
+    const extraHash = hashAddresses((addresses || []).filter(a => a.id !== default_address?.id));
+    setCustomer(customerId, defaultHash, extraHash);
 
     delete customerStore[`deleted_${customerId}`];
     res.send("✅ 公司已收到註冊通知");
@@ -116,29 +142,21 @@ app.post("/webhook", async (req, res) => {
   const defaultHash = hashAddresses(defaultAddress ? [defaultAddress] : []);
   const extraHash = hashAddresses(extraAddresses);
 
-  const last = customerStore[customerId];
-
-  if (!last) {
-    customerStore[customerId] = { defaultHash, extraHash, notified: true };
-    return res.send("✅ 首次登入，僅記錄地址 hash");
-  }
-
-  const defaultChanged = last.defaultHash !== defaultHash;
-  const extraChanged = last.extraHash !== extraHash;
+  const last = getCustomer(customerId);
+  const defaultChanged = last?.defaultHash !== defaultHash;
+  const extraChanged = last?.extraHash !== extraHash;
 
   let action = null;
-  if (!last.defaultHash && defaultHash) action = "加入預設地址";
-  else if (last.defaultHash && !defaultHash) action = "刪除預設地址";
+  if (!last?.defaultHash && defaultHash) action = "加入預設地址";
+  else if (last?.defaultHash && !defaultHash) action = "刪除預設地址";
   else if (defaultChanged) action = "變更預設地址";
-  else if (!last.extraHash && extraHash) action = "新增地址";
-  else if (last.extraHash && !extraHash) action = "刪除地址";
+  else if (!last?.extraHash && extraHash) action = "新增地址";
+  else if (last?.extraHash && !extraHash) action = "刪除地址";
   else if (extraChanged) action = "更新地址";
-  else {
-    customerStore[customerId] = { ...last, defaultHash, extraHash };
-    return res.send("✅ 無地址變更");
-  }
 
-  customerStore[customerId] = { ...last, defaultHash, extraHash };
+  setCustomer(customerId, defaultHash, extraHash); // 🧠 無論變動與否都儲存
+
+  if (!action) return res.send("✅ 地址無實際變更");
 
   const body = formatEmailBody(customer, action);
   try {
@@ -151,6 +169,7 @@ app.post("/webhook", async (req, res) => {
     });
     res.send(`📨 地址變更通知：${action}`);
   } catch (err) {
+    console.error("❌ 郵件寄送失敗", err);
     res.status(500).send("❌ 郵件寄送失敗");
   }
 });
@@ -185,7 +204,7 @@ app.post("/delete-account", async (req, res) => {
       body: msg
     });
 
-    delete customerStore[customerId];
+    deleteCustomer(customerId);
     customerStore[deletedKey] = true;
 
     res.send("✅ 已寄送刪除確認信給用戶");
