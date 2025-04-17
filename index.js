@@ -25,8 +25,8 @@ function decrypt(text) {
   return decrypted.toString();
 }
 
-// ✅ 初始化 SQLite
-const db = new Database("customer_store.db");
+// ✅ 初始化 SQLite（使用指定路徑）
+const db = new Database("C:/Users/vince/OneDrive/桌面/shopify-webhook/customer_store.db");
 db.exec(`
   CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
@@ -290,14 +290,11 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🗑️ 客戶刪除帳戶通知（僅寄一次）
+// 🗑️ 客戶刪除帳戶通知
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   const customerId = id?.toString();
-
-  if (!customerId || !email) {
-    return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
-  }
+  if (!customerId || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
 
   const deletedKey = `deleted_${customerId}`;
   if (customerStore[deletedKey]) {
@@ -335,7 +332,7 @@ app.post("/delete-account", async (req, res) => {
   }
 });
 
-// ✅ 健康檢查路由
+// ✅ 健康檢查
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正常運行");
 });
