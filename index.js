@@ -1,16 +1,19 @@
 // 📦 Shopify 客戶通知系統（繁體中文 + 註冊/地址通知 + 單次刪除 + 中英文姓名顯示 + SQLite 加密持久化）
 
 require("dotenv").config();
-const fs = require("fs");
 const express = require("express");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { DateTime } = require("luxon");
 const nodemailer = require("nodemailer");
 const cors = require("cors");
 const Database = require("better-sqlite3");
 
-// ✅ 確保資料夾存在（如果有需要自訂資料夾，可修改此處）
-const dbPath = "./customer_store.db";
+// ✅ 自動建立資料夾
+const dbDir = path.join(__dirname, "data");
+const dbPath = path.join(dbDir, "customer_store.db");
+if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir);
 
 // 🔐 加密密鑰
 const secret = process.env.SECRET_KEY;
@@ -98,7 +101,6 @@ function deleteCustomer(id) {
   }
 }
 
-// 🧠 顯示中英文姓名
 function formatFullName(first, last) {
   const isChinese = str => /[\u4e00-\u9fff]/.test(str);
   if (!first && !last) return "";
@@ -108,21 +110,12 @@ function formatFullName(first, last) {
 function hashAddressFields(address) {
   if (!address) return "";
   const fields = [
-    address.first_name,
-    address.last_name,
-    address.name,
-    address.company,
-    address.address1,
-    address.address2,
-    address.city,
-    address.province,
-    address.zip,
-    address.country,
-    address.phone
+    address.first_name, address.last_name, address.name, address.company,
+    address.address1, address.address2, address.city, address.province,
+    address.zip, address.country, address.phone
   ];
   return crypto.createHash("sha256").update(fields.join("|").toLowerCase()).digest("hex");
 }
-
 function hashAddresses(addresses) {
   if (!addresses || addresses.length === 0) return "";
   const content = addresses.map(hashAddressFields).join("|");
@@ -133,7 +126,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const customerStore = {}; // 用於刪除通知記錄
+const customerStore = {};
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -294,19 +287,17 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🗑️ 刪除通知
+// 🗑️ 刪除帳號通知
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   const customerId = id?.toString();
   if (!customerId || !email) return res.status(400).send("❌ 缺少帳戶 ID 或 Email");
 
   const deletedKey = `deleted_${customerId}`;
-  if (customerStore[deletedKey]) {
-    return res.send("✅ 該帳戶已寄送刪除通知");
-  }
+  if (customerStore[deletedKey]) return res.send("✅ 該帳戶已寄送刪除通知");
 
-  const displayName = formatFullName(first_name, last_name);
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
+  const displayName = formatFullName(first_name, last_name);
 
   const msg = `👋 ${displayName} 您好，
 
