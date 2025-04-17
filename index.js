@@ -352,6 +352,26 @@ app.get("/download-db", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// 🧾 測試用：列出所有客戶資料（開發階段用）
+app.get("/customers", (req, res) => {
+  try {
+    const rows = db.prepare("SELECT * FROM customers").all();
+    const customers = rows.map(row => ({
+      id: row.id,
+      name: decrypt(row.name),
+      email: decrypt(row.email),
+      default_address: JSON.parse(decrypt(row.default_address)),
+      extra_addresses: JSON.parse(decrypt(row.extra_addresses)),
+      updated_at: row.updated_at
+    }));
+    res.json(customers);
+  } catch (err) {
+    console.error("❌ 無法讀取資料庫", err);
+    res.status(500).send("❌ 錯誤：無法讀取資料庫");
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`📡 Webhook 啟動於 http://localhost:${PORT}`);
 });
