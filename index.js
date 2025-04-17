@@ -10,6 +10,10 @@ const nodemailer = require("nodemailer");
 const cors = require("cors");
 const Database = require("better-sqlite3");
 
+const app = express();
+app.use(cors());
+app.use(express.json());
+
 // ✅ 自動建立資料夾
 const dbDir = path.join(__dirname, "data");
 const dbPath = path.join(dbDir, "customer_store.db");
@@ -121,10 +125,6 @@ function hashAddresses(addresses) {
   const content = addresses.map(hashAddressFields).join("|");
   return crypto.createHash("sha256").update(content).digest("hex");
 }
-
-const app = express();
-app.use(cors());
-app.use(express.json());
 
 const customerStore = {};
 
@@ -287,7 +287,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🗑️ 刪除帳號通知
+// 🗑️ 刪除帳戶通知
 app.post("/delete-account", async (req, res) => {
   const { id, email, first_name, last_name } = req.body;
   const customerId = id?.toString();
@@ -330,6 +330,25 @@ app.post("/delete-account", async (req, res) => {
 // ✅ 健康檢查
 app.get("/", (req, res) => {
   res.send("✅ Webhook 伺服器正常運行");
+});
+
+// ✅ 下載資料庫
+app.get("/download-db", (req, res) => {
+  const token = req.query.token;
+  if (token !== process.env.DOWNLOAD_TOKEN) {
+    return res.status(403).send("🚫 無效的下載 Token");
+  }
+
+  fs.access(dbPath, fs.constants.F_OK, (err) => {
+    if (err) return res.status(404).send("❌ 找不到資料庫");
+
+    res.download(dbPath, "customer_store.db", (err) => {
+      if (err) {
+        console.error("❌ 下載失敗", err);
+        res.status(500).send("❌ 下載失敗");
+      }
+    });
+  });
 });
 
 const PORT = process.env.PORT || 3000;
