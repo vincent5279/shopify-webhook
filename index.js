@@ -1,5 +1,3 @@
-// 📦 Shopify 客戶通知系統（繁體中文 + 註冊/地址通知 + 單次刪除 + 中英文姓名顯示 + SQLite 加密持久化）
-
 require("dotenv").config();
 const express = require("express");
 const crypto = require("crypto");
@@ -25,8 +23,8 @@ function decrypt(text) {
   return decrypted.toString();
 }
 
-// ✅ 初始化 SQLite（使用指定路徑）
-const db = new Database("C:/Users/vince/OneDrive/桌面/shopify-webhook/customer_store.db");
+// ✅ 初始化 SQLite（指定資料庫路徑）
+const db = new Database("C:/Users/vince/Documents/shopify-webhook/customer_store.db");
 db.exec(`
   CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
@@ -104,17 +102,9 @@ function formatFullName(first, last) {
 function hashAddressFields(address) {
   if (!address) return "";
   const fields = [
-    address.first_name,
-    address.last_name,
-    address.name,
-    address.company,
-    address.address1,
-    address.address2,
-    address.city,
-    address.province,
-    address.zip,
-    address.country,
-    address.phone
+    address.first_name, address.last_name, address.name, address.company,
+    address.address1, address.address2, address.city, address.province,
+    address.zip, address.country, address.phone
   ];
   return crypto.createHash("sha256").update(fields.join("|").toLowerCase()).digest("hex");
 }
@@ -129,7 +119,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const customerStore = {}; // 用於刪除通知記錄
+const customerStore = {}; // 僅用於記錄刪除通知狀態
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -159,7 +149,6 @@ app.post("/webhook/new-customer", async (req, res) => {
 
   const displayName = name || formatFullName(first_name, last_name);
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
-
   const msg = `🆕 有新客戶註冊帳號：\n\n👤 帳號姓名：${displayName}\n📧 電郵：${email}\n🕒 註冊時間：${time}（香港時間）`;
 
   try {
@@ -304,14 +293,7 @@ app.post("/delete-account", async (req, res) => {
   const displayName = formatFullName(first_name, last_name);
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
 
-  const msg = `👋 ${displayName} 您好，
-
-您已成功刪除本公司網站帳戶。
-我們已於 ${time}（香港時間）清除與您相關的通知記錄與記憶。
-
-🧠 所有資料已永久移除，若您重新註冊，我們將視為全新帳號。
-
-謝謝您曾使用我們的服務 🙏`;
+  const msg = `👋 ${displayName} 您好，\n\n您已成功刪除本公司網站帳戶。\n我們已於 ${time}（香港時間）清除與您相關的通知記錄與記憶。\n\n🧠 所有資料已永久移除，若您重新註冊，我們將視為全新帳號。\n\n謝謝您曾使用我們的服務 🙏`;
 
   try {
     await sendNotification({
