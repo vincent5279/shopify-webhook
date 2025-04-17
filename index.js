@@ -43,11 +43,11 @@ function formatFullName(first, last) {
 
 // ✅ 註冊通知
 app.post("/webhook/new-customer", async (req, res) => {
-  const { id, email, first_name, last_name, name, default_address, addresses } = req.body;
+  const { id, email, first_name, last_name, default_address, addresses } = req.body;
   const customerId = id?.toString();
   if (!customerId) return res.status(400).send("❌ 缺少 customer ID");
 
-  const displayName = name || formatFullName(first_name, last_name);
+  const displayName = formatFullName(first_name, last_name); // ✅ 修正：永遠使用格式化姓名
   const time = DateTime.now().setZone("Asia/Hong_Kong").toFormat("yyyy/MM/dd HH:mm:ss");
 
   const msg = `🆕 有新客戶註冊帳號：\n\n👤 帳號姓名：${displayName}\n📧 電郵：${email}\n🕒 註冊時間：${time}（香港時間）`;
@@ -86,7 +86,7 @@ app.post("/webhook", async (req, res) => {
   if (!last) {
     customerStore[customerId] = {
       id: customerId,
-      name: customer.name || formatFullName(customer.first_name, customer.last_name),
+      name: formatFullName(customer.first_name, customer.last_name), // ✅ 姓名統一格式
       email: customer.email,
       default_address: defaultAddress,
       extra_addresses: extraAddresses,
@@ -213,4 +213,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`📡 Webhook 啟動於 http://localhost:${PORT}`);
 });
-
